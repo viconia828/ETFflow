@@ -23,7 +23,12 @@ from etf_flow_monitor.monitor.flow_metrics import (
 from etf_flow_monitor.monitor.html_dashboard import write_dashboard_html
 from etf_flow_monitor.monitor.report import write_markdown_report
 from etf_flow_monitor.run_ledger import RunLedger, make_log_dir
-from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, trading_calendar_from_frame
+from etf_flow_monitor.utils.calendar import (
+    current_shanghai_date,
+    normalize_date_input,
+    resolve_monitor_market_date,
+    trading_calendar_from_frame,
+)
 from etf_flow_monitor.utils.io import (
     clean_excel_text,
     format_tushare_date,
@@ -113,14 +118,22 @@ def main(argv: list[str] | None = None) -> int:
                 )
             calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
             if explicit_trade_date:
-                market_date = pd.Timestamp(calendar.resolve_request_date_market_date(requested_date.date())).normalize()
-                calendar_mode = "explicit_request_date"
+                resolved_date, calendar_mode = resolve_monitor_market_date(
+                    calendar,
+                    requested_date.date(),
+                    explicit_request=True,
+                )
+                market_date = pd.Timestamp(resolved_date).normalize()
             elif use_latest_local_cache_date:
                 market_date = pd.Timestamp(calendar.resolve_request_date_market_date(requested_date.date())).normalize()
                 calendar_mode = "local_cache_latest_market_date"
             else:
-                market_date = pd.Timestamp(calendar.resolve_market_date(requested_date.date())).normalize()
-                calendar_mode = "latest_available_market_date"
+                resolved_date, calendar_mode = resolve_monitor_market_date(
+                    calendar,
+                    requested_date.date(),
+                    explicit_request=False,
+                )
+                market_date = pd.Timestamp(resolved_date).normalize()
             trade_date = market_date
             calendar_payload = {
                 "request_date": requested_date.strftime("%Y-%m-%d"),

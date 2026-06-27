@@ -4,7 +4,7 @@ import pandas as pd
 
 from etf_flow_monitor.data.category_map import apply_category_map, category_map_stats, load_category_map
 from etf_flow_monitor.data.cross_border_fill import fill_cross_border_previous_values
-from etf_flow_monitor.utils.calendar import trading_calendar_from_frame
+from etf_flow_monitor.utils.calendar import resolve_monitor_market_date, trading_calendar_from_frame
 from tools.validate_category_map import validate_category_map
 from tools.build_etf_category_map import infer_category, infer_etf_candidate
 from tools.refine_category_map_with_sw import refine_category_map
@@ -137,6 +137,37 @@ def test_trading_calendar_from_frame_maps_closed_day() -> None:
     calendar = trading_calendar_from_frame(frame, exchange="SSE")
 
     assert calendar.resolve_request_date_market_date(pd.Timestamp("2026-06-26").date()).isoformat() == "2026-06-25"
+
+
+def test_monitor_market_date_rolls_back_when_explicit_request_is_today() -> None:
+    calendar = trading_calendar_from_frame(
+        pd.DataFrame(
+            [
+                {"exchange": "SSE", "cal_date": "2026-06-24", "is_open": 1, "pretrade_date": "2026-06-23"},
+                {"exchange": "SSE", "cal_date": "2026-06-25", "is_open": 1, "pretrade_date": "2026-06-24"},
+                {"exchange": "SSE", "cal_date": "2026-06-26", "is_open": 1, "pretrade_date": "2026-06-25"},
+            ]
+        ),
+        exchange="SSE",
+    )
+
+    market_date, mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-26").date(),
+        explicit_request=True,
+        current_date=pd.Timestamp("2026-06-26").date(),
+    )
+    historical_date, historical_mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-25").date(),
+        explicit_request=True,
+        current_date=pd.Timestamp("2026-06-26").date(),
+    )
+
+    assert market_date == pd.Timestamp("2026-06-25").date()
+    assert mode == "explicit_current_date_latest_available_market_date"
+    assert historical_date == pd.Timestamp("2026-06-25").date()
+    assert historical_mode == "explicit_request_date"
 
 
 def test_validate_category_map_flags_duplicates(tmp_path) -> None:

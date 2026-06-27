@@ -199,7 +199,7 @@ python -X utf8 -u tools\update_flow_cache.py --config config.txt --full-check
 data/local_reference/etf_category_map.csv
 ```
 
-页面的资金轮动主图按 `category` 聚合。明细表默认显示 `category`，鼠标悬停显示完整 `category / subcategory`。
+页面的资金轮动主图按 `category` 聚合。明细表直接显示 `category / subcategory`；两者相同时只显示一次。
 
 如果要重新生成分类表：
 
@@ -347,7 +347,7 @@ $env:PYTHONPATH = "$PWD\src"
 python -X utf8 -u -m etf_flow_monitor.cli --config config.txt
 ```
 
-生成指定日期：
+生成指定日期。若指定日期是当前自然日，则仍按“最近可用市场日”口径回退到前一个交易日，避免当天交易数据尚未完整落地：
 
 ```powershell
 $env:PYTHONPATH = "$PWD\src"

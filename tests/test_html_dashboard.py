@@ -131,8 +131,8 @@ def test_write_dashboard_html_is_self_contained(tmp_path) -> None:
     assert "本文件为单日静态快照" not in html
     assert "分类维护" not in html
     assert "电子" in html
-    assert 'class="category-cell" title="电子 / 半导体材料">电子</td>' in html
-    assert ">电子 / 半导体材料<" not in html
+    assert 'class="category-cell">电子 / 半导体材料</td>' in html
+    assert 'class="category-cell" title=' not in html
     assert "债券" in html
     assert "https://" not in html
     assert "http://" not in html

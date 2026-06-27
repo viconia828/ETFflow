@@ -19,7 +19,12 @@ if str(SRC_DIR) not in sys.path:
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import category_map_codes, load_category_map  # noqa: E402
 from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
-from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, trading_calendar_from_frame  # noqa: E402
+from etf_flow_monitor.utils.calendar import (  # noqa: E402
+    current_shanghai_date,
+    normalize_date_input,
+    resolve_monitor_market_date,
+    trading_calendar_from_frame,
+)
 from etf_flow_monitor.utils.io import format_tushare_date  # noqa: E402
 
 
@@ -60,11 +65,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
     if str(args.trade_date or "").strip():
-        market_date = pd.Timestamp(calendar.resolve_request_date_market_date(requested_date.date())).normalize()
-        calendar_mode = "explicit_request_date"
+        resolved_date, calendar_mode = resolve_monitor_market_date(
+            calendar,
+            requested_date.date(),
+            explicit_request=True,
+        )
+        market_date = pd.Timestamp(resolved_date).normalize()
     else:
-        market_date = pd.Timestamp(calendar.resolve_market_date(requested_date.date())).normalize()
-        calendar_mode = "latest_available_market_date"
+        resolved_date, calendar_mode = resolve_monitor_market_date(
+            calendar,
+            requested_date.date(),
+            explicit_request=False,
+        )
+        market_date = pd.Timestamp(resolved_date).normalize()
 
     source_start = _previous_trading_day_or_same(calendar, configured_source_start)
     if source_start > market_date:

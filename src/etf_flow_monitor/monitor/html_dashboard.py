@@ -474,15 +474,13 @@ def _render_detail_rank_table(title: str, frame: pd.DataFrame, empty_message: st
         except (TypeError, ValueError):
             pct_text = ""
         flow_class = _value_class(flow_yi)
-        category_label = _category_label(row)
-        category_title = _category_display(row)
-        category_title_attr = f' title="{escape(category_title)}"' if category_title != category_label else ""
+        category_label = _category_display(row)
         rows.append(
             "<tr>"
             f'<td class="rank-cell">{rank}</td>'
             f"<td>{escape(str(row.get('fund_code', '')))}</td>"
             f"<td>{escape(str(row.get('name', '') or ''))}</td>"
-            f'<td class="category-cell"{category_title_attr}>{escape(category_label)}</td>'
+            f'<td class="category-cell">{escape(category_label)}</td>'
             f"<td>{escape(pct_text)}</td>"
             f"<td>{escape(_plain_number(amount_yi))}</td>"
             f'<td class="{flow_class}">{escape(_signed_number(flow_yi))}</td>'
@@ -1382,7 +1380,6 @@ td {
   font-family: Consolas, "Cascadia Mono", monospace;
   font-weight: 900;
 }
-.category-cell[title] { cursor: help; }
 .notes-section ul {
   margin: 14px 0 0;
   padding-left: 20px;

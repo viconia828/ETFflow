@@ -50,6 +50,22 @@ def format_trade_date(value: Any) -> str:
     return normalize_date_input(value).strftime("%Y-%m-%d")
 
 
+def resolve_monitor_market_date(
+    calendar: "TradingCalendar",
+    request_date: date,
+    *,
+    explicit_request: bool,
+    current_date: date | None = None,
+) -> tuple[date, str]:
+    requested = normalize_date_input(request_date, field_name="request_date")
+    if explicit_request:
+        today = normalize_date_input(current_date or current_shanghai_date(), field_name="current_date")
+        if requested == today:
+            return calendar.resolve_market_date(requested), "explicit_current_date_latest_available_market_date"
+        return calendar.resolve_request_date_market_date(requested), "explicit_request_date"
+    return calendar.resolve_market_date(requested), "latest_available_market_date"
+
+
 @dataclass(frozen=True, slots=True)
 class TradeCalendarRow:
     exchange: str

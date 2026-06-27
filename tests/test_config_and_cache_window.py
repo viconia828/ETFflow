@@ -167,6 +167,20 @@ def test_publish_dashboard_path_falls_back_to_previous_generated_trade_date(tmp_
     assert infer_trade_key(resolved) == "20260618"
 
 
+def test_publish_dashboard_path_rolls_back_current_day_request(tmp_path) -> None:
+    today_dashboard = tmp_path / "flow_monitor" / "20260626" / "etf_flow_dashboard.html"
+    previous_dashboard = tmp_path / "flow_monitor" / "20260625" / "etf_flow_dashboard.html"
+    today_dashboard.parent.mkdir(parents=True)
+    previous_dashboard.parent.mkdir(parents=True)
+    today_dashboard.write_text("<!doctype html><title>today</title>", encoding="utf-8")
+    previous_dashboard.write_text("<!doctype html><title>previous</title>", encoding="utf-8")
+
+    resolved = resolve_dashboard_path(tmp_path, trade_date="20260626", current_date=date(2026, 6, 26))
+
+    assert resolved == previous_dashboard.resolve()
+    assert infer_trade_key(resolved) == "20260625"
+
+
 def test_publish_homepage_uses_latest_report_date_not_last_publish(tmp_path) -> None:
     worktree = tmp_path / "pages"
     new_dashboard = tmp_path / "new.html"
