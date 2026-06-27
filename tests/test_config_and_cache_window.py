@@ -6,18 +6,28 @@ import stat
 
 import pandas as pd
 
-from etf_flow_monitor.cli import _report_history_start_date
+from etf_flow_monitor.cli import _report_history_start_date, _source_frame_stats
 from etf_flow_monitor.config import load_config
 from etf_flow_monitor.utils.calendar import trading_calendar_from_frame
 from etf_flow_monitor.utils.io import parse_excel_friendly_date
 from etf_flow_monitor.utils.proxy import proxy_bypass_env
-from tools.publish_pages import infer_pages_url, infer_trade_key, remove_tree, resolve_dashboard_path, resolve_publish_repo_url, stage_dashboard
+from tools.publish_pages import (
+    infer_pages_url,
+    infer_trade_key,
+    remove_tree,
+    resolve_dashboard_path,
+    resolve_dashboard_range,
+    resolve_publish_repo_url,
+    stage_dashboard,
+    stage_dashboards,
+)
 from tools.update_flow_cache import (
     _calendar_refresh_status,
     _missing_dates_for_update,
     _previous_trading_day_or_same,
     _source_start_for_usable_date,
 )
+from tools.build_flow_reports_range import _unique_timestamps
 
 
 def test_config_local_cache_start_date_default_and_override(tmp_path) -> None:
@@ -174,6 +184,23 @@ def test_publish_homepage_uses_latest_report_date_not_last_publish(tmp_path) -> 
     assert "./20260618/?v=" in reports_index
 
 
+def test_publish_pages_can_stage_generated_dashboard_range(tmp_path) -> None:
+    output_dir = tmp_path / "outputs"
+    for trade_key, title in [("20260618", "old report"), ("20260625", "middle report"), ("20260626", "new report")]:
+        dashboard = output_dir / "flow_monitor" / trade_key / "etf_flow_dashboard.html"
+        dashboard.parent.mkdir(parents=True)
+        dashboard.write_text(f"<!doctype html><title>{title}</title>", encoding="utf-8")
+
+    items = resolve_dashboard_range(output_dir, range_start="20260618", range_end="20260626")
+    worktree = tmp_path / "pages"
+    stage_dashboards(worktree, items)
+
+    assert [item[0] for item in items] == ["20260618", "20260625", "20260626"]
+    assert "new report" in (worktree / "index.html").read_text(encoding="utf-8")
+    reports_index = (worktree / "reports" / "index.html").read_text(encoding="utf-8")
+    assert reports_index.index("2026-06-26") < reports_index.index("2026-06-25") < reports_index.index("2026-06-18")
+
+
 def test_calendar_refresh_status_visualizes_cached_tail_and_action() -> None:
     cached = pd.DataFrame(
         [
@@ -187,6 +214,12 @@ def test_calendar_refresh_status_visualizes_cached_tail_and_action() -> None:
 
     assert covered == {"cached_tail": "20260630", "required_tail": "20260627", "action": "cached"}
     assert stale == {"cached_tail": "20260630", "required_tail": "20260710", "action": "fetch"}
+
+
+def test_range_report_trade_dates_are_deduplicated() -> None:
+    values = _unique_timestamps(["2026-06-25", pd.Timestamp("2026-06-25"), "2026-06-26"])
+
+    assert values == [pd.Timestamp("2026-06-25"), pd.Timestamp("2026-06-26")]
 
 
 def test_cache_source_start_uses_12_month_background_window() -> None:
@@ -206,6 +239,40 @@ def test_cache_source_start_uses_12_month_background_window() -> None:
     assert source_start == pd.Timestamp("2025-01-01")
     assert _previous_trading_day_or_same(calendar, source_start) == pd.Timestamp("2024-12-31")
     assert _report_history_start_date(calendar, pd.Timestamp("2026-01-01")) == pd.Timestamp("2024-12-31")
+
+
+def test_source_frame_stats_ignores_future_listed_codes_only_after_daily_missing() -> None:
+    daily = pd.DataFrame(
+        [
+            {"fund_code": "510300.SH", "trade_date": "2026-06-25"},
+            {"fund_code": "589360.SH", "trade_date": "2026-06-25"},
+        ]
+    )
+    shares = pd.DataFrame([{"fund_code": "510300.SH", "trade_date": "2026-06-25"}])
+    metadata = pd.DataFrame(
+        [
+            {"fund_code": "589360.SH", "list_date": "2026-06-26"},
+            {"fund_code": "159065.SZ", "list_date": "2026-06-26"},
+            {"fund_code": "159066.SZ", "list_date": ""},
+            {"fund_code": "510140.SH", "list_date": "2026-06-25"},
+        ]
+    )
+
+    stats = _source_frame_stats(
+        daily=daily,
+        shares=shares,
+        requested_codes=["510300.SH", "589360.SH", "159065.SZ", "159066.SZ", "510140.SH"],
+        trade_date=pd.Timestamp("2026-06-25"),
+        listing_metadata_frames=[metadata],
+    )
+
+    assert stats["fund_daily_funds"] == 2
+    assert stats["fund_daily_missing_funds_raw"] == 3
+    assert stats["fund_daily_future_listed_funds"] == 1
+    assert stats["fund_daily_future_listed_codes"] == ["159065.SZ"]
+    assert stats["fund_daily_missing_funds"] == 2
+    assert stats["fund_share_missing_funds_raw"] == 4
+    assert stats["fund_share_missing_funds"] == 3
 
 
 def test_missing_dates_for_update_uses_fast_interval_edges() -> None:

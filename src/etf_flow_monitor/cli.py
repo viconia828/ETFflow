@@ -24,8 +24,16 @@ from etf_flow_monitor.monitor.html_dashboard import write_dashboard_html
 from etf_flow_monitor.monitor.report import write_markdown_report
 from etf_flow_monitor.run_ledger import RunLedger, make_log_dir
 from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, trading_calendar_from_frame
-from etf_flow_monitor.utils.io import format_tushare_date, read_user_csv
+from etf_flow_monitor.utils.io import (
+    clean_excel_text,
+    format_tushare_date,
+    parse_excel_friendly_date,
+    read_user_csv,
+)
 from etf_flow_monitor.utils.logger import configure_logging
+
+DAILY_REPORT_COLUMNS = ["fund_code", "trade_date", "close", "pct_change", "volume", "amount"]
+SHARE_REPORT_COLUMNS = ["fund_code", "trade_date", "shares", "source"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     ledger = RunLedger(log_dir=log_dir, argv=raw_argv, config_path=config_path)
     run_stats: dict[str, object] = {}
     category_map = load_category_map(config.category_map_path)
+    category_metadata = _load_category_metadata(config.category_map_path)
     category_codes = category_map_codes(category_map)
     run_stats["category_map_rows"] = int(len(category_map))
 
@@ -153,7 +162,13 @@ def main(argv: list[str] | None = None) -> int:
             run_stats["fetch_shape"] = "daily_cross_section"
             run_stats["fetch_trade_dates"] = int(len(fetch_trade_dates))
             try:
-                daily = source.get_etf_daily_by_trade_dates(codes, fetch_trade_dates, refresh=args.refresh, cache_only=args.cache_only)
+                daily = source.get_etf_daily_by_trade_dates(
+                    codes,
+                    fetch_trade_dates,
+                    refresh=args.refresh,
+                    cache_only=args.cache_only,
+                    columns=DAILY_REPORT_COLUMNS,
+                )
             except Exception as exc:  # noqa: BLE001
                 if args.cache_only:
                     return _finish_skipped(ledger, run_stats, f"本地行情缓存读取失败：{exc}")
@@ -163,7 +178,13 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 if run_stats.get("fetch_shape") == "daily_cross_section":
                     try:
-                        shares = source.get_etf_share_by_trade_dates(codes, fetch_trade_dates, refresh=args.refresh, cache_only=args.cache_only)
+                        shares = source.get_etf_share_by_trade_dates(
+                            codes,
+                            fetch_trade_dates,
+                            refresh=args.refresh,
+                            cache_only=args.cache_only,
+                            columns=SHARE_REPORT_COLUMNS,
+                        )
                     except Exception as exc:  # noqa: BLE001
                         if args.cache_only:
                             return _finish_skipped(ledger, run_stats, f"本地份额缓存读取失败：{exc}")
@@ -176,7 +197,15 @@ def main(argv: list[str] | None = None) -> int:
                 shares = pd.DataFrame()
             daily, shares, fill_stats = fill_cross_border_previous_values(daily, shares, category_map, fetch_trade_dates)
             run_stats.update(fill_stats)
-            run_stats.update(_source_frame_stats(daily=daily, shares=shares, requested_codes=codes))
+            run_stats.update(
+                _source_frame_stats(
+                    daily=daily,
+                    shares=shares,
+                    requested_codes=codes,
+                    trade_date=trade_date,
+                    listing_metadata_frames=[basic, category_metadata],
+                )
+            )
             run_stats.update(source.cache.snapshot_stats() if source.cache is not None else {})
 
         ledger.progress("build_metrics")
@@ -338,18 +367,51 @@ def _finish_skipped(ledger: RunLedger, stats: dict[str, object], message: str) -
     return 0
 
 
-def _source_frame_stats(*, daily: pd.DataFrame, shares: pd.DataFrame, requested_codes: list[str]) -> dict[str, int]:
-    requested_count = len(set(str(code).upper() for code in requested_codes))
-    daily_funds = _nunique_code(daily)
-    share_funds = _nunique_code(shares)
-    return {
+def _load_category_metadata(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return read_user_csv(path)
+    except Exception:  # noqa: BLE001
+        return pd.DataFrame()
+
+
+def _source_frame_stats(
+    *,
+    daily: pd.DataFrame,
+    shares: pd.DataFrame,
+    requested_codes: list[str],
+    trade_date: pd.Timestamp | None = None,
+    listing_metadata_frames: list[pd.DataFrame] | None = None,
+) -> dict[str, object]:
+    requested = set(_normalized_codes(requested_codes))
+    daily_codes = _frame_code_set(daily)
+    share_codes = _frame_code_set(shares)
+    daily_missing = requested - daily_codes
+    future_listed = _future_listed_codes(
+        daily_missing,
+        trade_date=trade_date,
+        metadata_frames=listing_metadata_frames or [],
+    )
+    effective_requested = requested - set(future_listed)
+    share_missing_raw = requested - share_codes
+    share_missing = effective_requested - share_codes
+    daily_funds = len(daily_codes)
+    share_funds = len(share_codes)
+    stats: dict[str, object] = {
         "fund_daily_rows": int(len(daily)),
         "fund_daily_funds": daily_funds,
-        "fund_daily_missing_funds": max(requested_count - daily_funds, 0),
+        "fund_daily_missing_funds": int(len(daily_missing - set(future_listed))),
+        "fund_daily_missing_funds_raw": int(len(daily_missing)),
+        "fund_daily_future_listed_funds": int(len(future_listed)),
         "fund_share_rows": int(len(shares)),
         "fund_share_funds": share_funds,
-        "fund_share_missing_funds": max(requested_count - share_funds, 0),
+        "fund_share_missing_funds": int(len(share_missing)),
+        "fund_share_missing_funds_raw": int(len(share_missing_raw)),
     }
+    if future_listed:
+        stats["fund_daily_future_listed_codes"] = future_listed
+    return stats
 
 
 def _flow_stats(flow: pd.DataFrame) -> dict[str, int]:
@@ -385,6 +447,56 @@ def _nunique_code(frame: pd.DataFrame) -> int:
     if frame is None or frame.empty or "fund_code" not in frame.columns:
         return 0
     return int(frame["fund_code"].dropna().astype(str).str.upper().nunique())
+
+
+def _frame_code_set(frame: pd.DataFrame) -> set[str]:
+    if frame is None or frame.empty or "fund_code" not in frame.columns:
+        return set()
+    return set(_normalized_codes(frame["fund_code"].tolist()))
+
+
+def _normalized_codes(values: list[object]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = clean_excel_text(value).upper()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            ordered.append(normalized)
+    return ordered
+
+
+def _future_listed_codes(
+    codes: set[str],
+    *,
+    trade_date: pd.Timestamp | None,
+    metadata_frames: list[pd.DataFrame],
+) -> list[str]:
+    if not codes or trade_date is None:
+        return []
+    report_date = pd.Timestamp(trade_date).normalize()
+    list_dates = _listing_date_by_code(metadata_frames)
+    future = [code for code in sorted(codes) if code in list_dates and list_dates[code] > report_date]
+    return future
+
+
+def _listing_date_by_code(metadata_frames: list[pd.DataFrame]) -> dict[str, pd.Timestamp]:
+    list_dates: dict[str, pd.Timestamp] = {}
+    for frame in metadata_frames:
+        if frame is None or frame.empty or "fund_code" not in frame.columns or "list_date" not in frame.columns:
+            continue
+        for _, row in frame[["fund_code", "list_date"]].iterrows():
+            code = clean_excel_text(row.get("fund_code")).upper()
+            if not code:
+                continue
+            parsed = parse_excel_friendly_date(row.get("list_date"))
+            if pd.isna(parsed):
+                continue
+            parsed_date = pd.Timestamp(parsed).normalize()
+            existing = list_dates.get(code)
+            if existing is None or parsed_date < existing:
+                list_dates[code] = parsed_date
+    return list_dates
 
 
 if __name__ == "__main__":

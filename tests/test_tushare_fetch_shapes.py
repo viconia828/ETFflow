@@ -80,3 +80,34 @@ def test_get_etf_share_by_trade_dates_tags_source_and_filters_codes(tmp_path) ->
     assert shares.loc[0, "fund_code"] == "510300.SH"
     assert shares.loc[0, "shares"] == 1000.0
     assert shares.loc[0, "source"] == "tushare:fund_share"
+
+
+def test_get_etf_daily_by_trade_dates_can_read_cached_subset_columns(tmp_path) -> None:
+    client = FakeTushareClient()
+    source = TushareEtfSource(client=client, cache=CacheStore(tmp_path / "cache"))
+
+    source.get_etf_daily_by_trade_dates(["510300.SH"], ["2026-06-25"])
+    cached = source.get_etf_daily_by_trade_dates(
+        ["510300.SH"],
+        ["2026-06-25"],
+        columns=["fund_code", "trade_date", "close", "amount"],
+    )
+
+    assert list(cached.columns) == [
+        "fund_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "price_change",
+        "pct_change",
+        "volume",
+        "amount",
+    ]
+    assert cached.loc[0, "fund_code"] == "510300.SH"
+    assert cached.loc[0, "close"] == 5.0
+    assert cached.loc[0, "amount"] == 50.0
+    assert pd.isna(cached.loc[0, "open"])
+    assert len(client.calls) == 1

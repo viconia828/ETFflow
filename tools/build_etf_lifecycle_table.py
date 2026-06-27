@@ -113,7 +113,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     start_date = _parse_optional_date(args.start_date)
     end_date = _parse_optional_date(args.end_date)
-    data_latest_date = latest_cached_share_date(config.cache_dir, config.source_name, end_date=end_date)
+    data_earliest_date, data_latest_date = cached_share_date_bounds(
+        config.cache_dir,
+        config.source_name,
+        start_date=start_date,
+        end_date=end_date,
+    )
     status_updates_enabled = start_date is None
 
     if (
@@ -121,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         and args.skip_if_current
         and not args.force
         and data_latest_date is not None
-        and _status_is_current(status_path, data_latest_date)
+        and _status_is_current(status_path, data_earliest_date=data_earliest_date, data_latest_date=data_latest_date)
     ):
         empty_plan = empty_announcement_request_plan()
         _write_csv(request_plan_path, prepare_for_csv(empty_plan))
@@ -132,7 +137,9 @@ def main(argv: list[str] | None = None) -> int:
             "schema_version": "etf_lifecycle_audit_v1",
             "skipped": True,
             "skip_reason": "lifecycle_status_current",
+            "data_earliest_date": format_tushare_date(data_earliest_date) if data_earliest_date is not None else "",
             "data_latest_date": format_tushare_date(data_latest_date),
+            "verified_from": str(status.get("verified_from") or status.get("data_earliest_date") or ""),
             "verified_through": str(status.get("verified_through") or ""),
             "request_plan_output": str(request_plan_path),
             "request_plan_rows": 0,
@@ -217,7 +224,9 @@ def main(argv: list[str] | None = None) -> int:
     if status_updates_enabled:
         verified_through = _update_lifecycle_status(
             status_path,
+            data_earliest_date=data_earliest_date,
             data_latest_date=data_latest_date,
+            local_cache_start_date=pd.Timestamp(config.local_cache_start_date).normalize(),
             lifecycle_current=lifecycle_current,
             request_plan_rows=len(request_plan),
         )
@@ -237,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
             "flow_adjustments_output": str(flow_adjustments_path),
             "flow_adjustment_rows": int(len(flow_adjustments)),
             "status_output": str(status_path),
+            "data_earliest_date": format_tushare_date(data_earliest_date) if data_earliest_date is not None else "",
             "data_latest_date": format_tushare_date(data_latest_date) if data_latest_date is not None else "",
             "verified_through": verified_through,
             "lifecycle_current": bool(lifecycle_current),
@@ -479,15 +489,17 @@ def _jump_keys(frame: pd.DataFrame) -> pd.Series:
     return fund_code + "|" + trade_date + "|" + prev_trade_date
 
 
-def latest_cached_share_date(
+def cached_share_date_bounds(
     cache_dir: Path,
     source_name: str,
     *,
+    start_date: pd.Timestamp | None = None,
     end_date: pd.Timestamp | None = None,
-) -> pd.Timestamp | None:
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     directory = cache_dir / source_name / "daily_cross_section" / "etf_share"
     if not directory.exists():
-        return None
+        return None, None
+    earliest: pd.Timestamp | None = None
     latest: pd.Timestamp | None = None
     for path in directory.glob("*.csv"):
         if len(path.stem) != 8 or not path.stem.isdigit():
@@ -496,11 +508,15 @@ def latest_cached_share_date(
         if pd.isna(parsed):
             continue
         current = pd.Timestamp(parsed).normalize()
+        if start_date is not None and current < pd.Timestamp(start_date).normalize():
+            continue
         if end_date is not None and current > end_date:
             continue
+        if earliest is None or current < earliest:
+            earliest = current
         if latest is None or current > latest:
             latest = current
-    return latest
+    return earliest, latest
 
 
 def _ensure_announcement_template(path: Path) -> None:
@@ -529,26 +545,58 @@ def _read_status(path: Path) -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _status_is_current(path: Path, data_latest_date: pd.Timestamp) -> bool:
+def _status_is_current(
+    path: Path,
+    *,
+    data_earliest_date: pd.Timestamp | None,
+    data_latest_date: pd.Timestamp,
+) -> bool:
     status = _read_status(path)
+    if not bool(status.get("lifecycle_current")):
+        return False
+    if int(status.get("request_plan_rows") or 0) != 0:
+        return False
+    if data_earliest_date is None:
+        return False
+    verified_from = pd.to_datetime(
+        status.get("verified_from") or status.get("data_earliest_date"),
+        format="%Y%m%d",
+        errors="coerce",
+    )
     verified = pd.to_datetime(status.get("verified_through"), format="%Y%m%d", errors="coerce")
-    return pd.notna(verified) and pd.Timestamp(verified).normalize() >= pd.Timestamp(data_latest_date).normalize()
+    if pd.isna(verified_from) or pd.isna(verified):
+        return False
+    return (
+        pd.Timestamp(verified_from).normalize() <= pd.Timestamp(data_earliest_date).normalize()
+        and pd.Timestamp(verified).normalize() >= pd.Timestamp(data_latest_date).normalize()
+    )
 
 
 def _update_lifecycle_status(
     path: Path,
     *,
+    data_earliest_date: pd.Timestamp | None,
     data_latest_date: pd.Timestamp | None,
+    local_cache_start_date: pd.Timestamp | None,
     lifecycle_current: bool,
     request_plan_rows: int,
 ) -> str:
     previous = _read_status(path)
+    previous_verified_from = str(previous.get("verified_from") or previous.get("data_earliest_date") or "")
     previous_verified = str(previous.get("verified_through") or "")
+    verified_from = (
+        format_tushare_date(data_earliest_date)
+        if lifecycle_current and data_earliest_date is not None
+        else previous_verified_from
+    )
     verified_through = format_tushare_date(data_latest_date) if lifecycle_current and data_latest_date is not None else previous_verified
     status = {
         "schema_version": "etf_lifecycle_status_v1",
+        "data_earliest_date": format_tushare_date(data_earliest_date) if data_earliest_date is not None else "",
         "data_latest_date": format_tushare_date(data_latest_date) if data_latest_date is not None else "",
+        "verified_from": verified_from,
         "verified_through": verified_through,
+        "local_cache_start_date": format_tushare_date(local_cache_start_date) if local_cache_start_date is not None else "",
         "lifecycle_current": bool(lifecycle_current),
         "request_plan_rows": int(request_plan_rows),
         "updated_at": datetime.now().isoformat(timespec="seconds"),

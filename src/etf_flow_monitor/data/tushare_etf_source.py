@@ -110,11 +110,16 @@ class TushareEtfSource:
         *,
         refresh: bool = False,
         cache_only: bool = False,
+        columns: list[str] | None = None,
     ) -> pd.DataFrame:
         frames: list[pd.DataFrame] = []
         code_set = set(_unique_codes(codes))
         for trade_date in _unique_trade_dates(trade_dates):
-            cached = None if refresh or self.cache is None else self.cache.load_daily_cross_section(self.source_name, "etf_daily", trade_date)
+            cached = (
+                None
+                if refresh or self.cache is None
+                else self.cache.load_daily_cross_section(self.source_name, "etf_daily", trade_date, columns=columns)
+            )
             if cached is None:
                 if cache_only:
                     frames.append(normalize_etf_daily_frame(None))
@@ -172,11 +177,16 @@ class TushareEtfSource:
         *,
         refresh: bool = False,
         cache_only: bool = False,
+        columns: list[str] | None = None,
     ) -> pd.DataFrame:
         frames: list[pd.DataFrame] = []
         code_set = set(_unique_codes(codes))
         for trade_date in _unique_trade_dates(trade_dates):
-            cached = None if refresh or self.cache is None else self.cache.load_daily_cross_section(self.source_name, "etf_share", trade_date)
+            cached = (
+                None
+                if refresh or self.cache is None
+                else self.cache.load_daily_cross_section(self.source_name, "etf_share", trade_date, columns=columns)
+            )
             if cached is None:
                 if cache_only:
                     frames.append(normalize_etf_share_frame(None))

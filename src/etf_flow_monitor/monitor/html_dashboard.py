@@ -145,7 +145,10 @@ def _render_document(
     </section>
 
     <section class="view-panel is-active" data-view-panel="trend">
-      {trend_panels}
+      <div class="trend-view-layout">
+        <div class="trend-panel-stack">{trend_panels}</div>
+        {_render_trend_static_summary(periods, period_models)}
+      </div>
       <section class="notes-section">
         <h2>口径说明</h2>
         <ul>{notes_html}</ul>
@@ -213,19 +216,40 @@ def _render_trend_period(model: dict, *, is_active: bool) -> str:
     active_class = " is-active" if is_active else ""
     return f"""
       <div class="period-panel{active_class}" data-period-panel="{escape(period.key)}">
-        <div class="trend-layout">
-          <article class="chart-card trend-card">
-            <div class="section-title">
-              <div>
-                <h2>滚动 {escape(period.label)} 净额</h2>
-                <span>金额单位：亿元，负值代表资金净流出</span>
-              </div>
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 {escape(period.label)} 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
             </div>
-            {_render_trend_svg(model["trend_rows"])}
-            <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
-          </article>
-        </div>
+          </div>
+          {_render_trend_svg(model["trend_rows"])}
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
       </div>
+"""
+
+
+def _render_trend_static_summary(periods: list[PeriodSpec], period_models: dict[str, dict]) -> str:
+    rows = []
+    for period in periods:
+        model = period_models[period.key]
+        value = float(model["period_net_yi"])
+        value_class = _value_class(value)
+        direction = "净流入" if value > 0 else "净流出" if value < 0 else "持平"
+        rows.append(
+            '<div class="trend-summary-row">'
+            f'<span class="trend-summary-label">{escape(period.label)}</span>'
+            f'<span class="trend-summary-direction {value_class}">{escape(direction)}</span>'
+            f'<strong class="trend-summary-value {value_class}">{escape(_signed_number(value))}</strong>'
+            "</div>"
+        )
+    return f"""
+        <aside class="trend-summary-card" aria-label="区间流入流出静态展示">
+          <h2>区间流向</h2>
+          <p class="section-caption">单位：亿元</p>
+          <div class="trend-summary-list">{"".join(rows)}</div>
+        </aside>
 """
 
 
@@ -238,7 +262,7 @@ def _render_rotation_period(model: dict, *, is_active: bool) -> str:
           <div class="rotation-header">
             <div>
               <h2>ETF 资金轮动（单位：亿元）</h2>
-              <span>{escape(period.label)} 分类净额，未映射品种归入“其他”</span>
+              <p class="section-caption">{escape(period.label)} 分类净额，未映射品种归入“其他”</p>
             </div>
             <div class="rotation-stats">
               {_compact_stat("流出合计", -model["outflow_total_yi"])}
@@ -265,7 +289,7 @@ def _render_detail_period(model: dict, *, is_active: bool) -> str:
         <section class="detail-section">
           <div class="section-title">
             <h2>{escape(period.label)} ETF 明细</h2>
-            <span>按区间累计估算净额排序，流入与流出各保留前十</span>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
           </div>
           {_render_detail_table(model["detail_flow"])}
         </section>
@@ -297,8 +321,8 @@ def _render_period_button(period: PeriodSpec, model: dict, *, is_active: bool) -
 def _render_trend_svg(rows: list[dict[str, object]]) -> str:
     width = 1000
     height = 390
-    left = 56
-    right = 72
+    left = 108
+    right = 28
     top = 34
     bottom = 48
     plot_width = width - left - right
@@ -339,7 +363,7 @@ def _render_trend_svg(rows: list[dict[str, object]]) -> str:
     tick_values = [min_y + (max_y - min_y) * idx / 4 for idx in range(5)]
     grid = "\n".join(
         f'<line class="grid-line" x1="{left}" y1="{y_at(value):.2f}" x2="{left + plot_width}" y2="{y_at(value):.2f}"></line>'
-        f'<text class="axis-label y-label" x="{left + plot_width + 16}" y="{y_at(value) + 4:.2f}">{escape(_axis_text(value))}</text>'
+        f'<text class="axis-label y-label" x="{left - 16}" y="{y_at(value) + 4:.2f}" text-anchor="end">{escape(_axis_text(value))}</text>'
         for value in tick_values
     )
     label_indexes = _label_indexes(len(rows), 5)
@@ -1028,7 +1052,7 @@ button, table { font: inherit; }
   border-radius: 8px;
   background: var(--panel);
 }
-.metric-card span, .compact-stat span, .section-title span, .rotation-header span {
+.metric-card span, .compact-stat span {
   display: block;
   color: var(--muted);
   font-weight: 800;
@@ -1083,34 +1107,50 @@ button, table { font: inherit; }
 }
 .view-panel, .period-panel { display: none; }
 .view-panel.is-active, .period-panel.is-active { display: block; }
-.trend-layout {
-  display: block;
+.trend-view-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 18px;
+  align-items: stretch;
 }
-.chart-card, .insight-card, .detail-section, .notes-section {
+.trend-panel-stack {
+  display: grid;
+  min-width: 0;
+}
+.trend-panel-stack > .period-panel.is-active { height: 100%; }
+.chart-card, .insight-card, .detail-section, .notes-section, .trend-summary-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
 }
 .chart-card { padding: 26px 30px; }
-.trend-card { min-height: 590px; }
-.section-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 16px;
+.trend-card {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 520px;
 }
-.section-title h2, .rotation-header h2, .insight-card h2, .notes-section h2 {
+.section-title {
+  display: block;
+  margin-bottom: 0;
+}
+.section-title h2, .rotation-header h2, .insight-card h2, .notes-section h2, .trend-summary-card h2 {
   margin: 0;
   font-size: 28px;
   line-height: 1.1;
   font-weight: 900;
 }
+.section-caption {
+  display: block;
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
 .trend-svg {
   display: block;
   width: 100%;
-  min-height: 390px;
+  min-height: 360px;
 }
 .chart-bg { fill: #101419; }
 .grid-line { stroke: #1b2430; stroke-width: 1; }
@@ -1138,6 +1178,44 @@ button, table { font: inherit; }
   color: var(--muted);
   font-size: 17px;
   font-weight: 800;
+}
+.trend-summary-card {
+  box-sizing: border-box;
+  position: sticky;
+  top: 16px;
+  padding: 24px;
+}
+.trend-summary-list {
+  display: grid;
+  gap: 8px;
+}
+.trend-summary-row {
+  display: grid;
+  grid-template-columns: 72px 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.trend-summary-row:first-child { border-top: 0; }
+.trend-summary-label {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+.trend-summary-direction {
+  font-size: 13px;
+  font-weight: 900;
+}
+.trend-summary-value {
+  min-width: 0;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
 }
 .rotation-header {
   display: flex;
@@ -1318,7 +1396,8 @@ td {
 @media (max-width: 1100px) {
   .dashboard-shell { width: min(100vw, 100%); margin: 0; padding: 12px; }
   .hero, .rotation-header, .control-row { flex-direction: column; align-items: stretch; }
-  .metric-strip, .trend-layout, .insight-list { grid-template-columns: 1fr; }
+  .metric-strip, .trend-view-layout, .insight-list { grid-template-columns: 1fr; }
+  .trend-summary-card { position: static; }
   .rotation-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rotation-grid { grid-template-columns: 1fr; gap: 18px; padding: 8px 0; }
   .rotation-axis { display: none; }

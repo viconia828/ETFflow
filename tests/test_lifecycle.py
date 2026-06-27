@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 from etf_flow_monitor.data.lifecycle import (
@@ -17,7 +19,11 @@ from etf_flow_monitor.data.lifecycle import (
 from etf_flow_monitor.data.cninfo_announcements import normalize_cninfo_rows
 from etf_flow_monitor.data.exchange_announcements import normalize_sse_rows, normalize_szse_rows
 from etf_flow_monitor.utils.calendar import trading_calendar_from_frame
-from tools.build_etf_lifecycle_table import load_cached_share_cross_sections
+from tools.build_etf_lifecycle_table import (
+    _status_is_current,
+    _update_lifecycle_status,
+    load_cached_share_cross_sections,
+)
 from tools.update_etf_announcements import (
     _merge_exchange_request_windows,
     build_auto_confirmations_from_retried_no_announcements,
@@ -56,6 +62,47 @@ def test_extract_lifecycle_events_from_announcements_detects_share_conversion() 
     assert events.loc[0, "event_keyword"] == "基金份额折算"
     assert events.loc[0, "event_date"] == pd.Timestamp("2026-01-06")
     assert events.loc[0, "event_date_source"] == "explicit"
+
+
+def test_lifecycle_status_invalidates_when_cached_start_moves_earlier(tmp_path) -> None:
+    status_path = tmp_path / "status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "etf_lifecycle_status_v1",
+                "data_latest_date": "20260626",
+                "verified_through": "20260626",
+                "lifecycle_current": True,
+                "request_plan_rows": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert not _status_is_current(
+        status_path,
+        data_earliest_date=pd.Timestamp("2024-01-01"),
+        data_latest_date=pd.Timestamp("2026-06-26"),
+    )
+
+    _update_lifecycle_status(
+        status_path,
+        data_earliest_date=pd.Timestamp("2024-01-01"),
+        data_latest_date=pd.Timestamp("2026-06-26"),
+        local_cache_start_date=pd.Timestamp("2024-01-01"),
+        lifecycle_current=True,
+        request_plan_rows=0,
+    )
+    assert _status_is_current(
+        status_path,
+        data_earliest_date=pd.Timestamp("2024-01-01"),
+        data_latest_date=pd.Timestamp("2026-06-26"),
+    )
+    assert not _status_is_current(
+        status_path,
+        data_earliest_date=pd.Timestamp("2023-01-03"),
+        data_latest_date=pd.Timestamp("2026-06-26"),
+    )
 
 
 def test_lifecycle_announcement_classification_keeps_liquidation_warnings_out() -> None:

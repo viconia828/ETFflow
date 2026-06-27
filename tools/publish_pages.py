@@ -27,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Publish ETF flow dashboard to GitHub Pages.")
     parser.add_argument("--config", default="config.txt")
     parser.add_argument("--trade-date", default="", help="Report date YYYYMMDD. Blank means latest generated dashboard.")
+    parser.add_argument("--range-start", default="", help="Publish all generated dashboards from this date.")
+    parser.add_argument("--range-end", default="", help="Publish all generated dashboards through this date.")
     parser.add_argument("--dashboard", default="", help="Explicit dashboard HTML path.")
     parser.add_argument("--repo-url", default="", help="Target Git repository URL. Defaults to config pages_repo_url, then git remote.")
     parser.add_argument("--remote", default="", help="Remote name used inside the temporary clone. Defaults to origin.")
@@ -41,23 +43,40 @@ def main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
     git_env = proxy_bypass_env(bypass_git_ssh_proxy=True)
-    requested_trade_key = normalize_trade_key(args.trade_date) if str(args.trade_date or "").strip() else ""
-    dashboard_path = resolve_dashboard_path(config.output_dir, trade_date=args.trade_date, dashboard=args.dashboard)
-    if str(args.dashboard or "").strip() and requested_trade_key:
-        trade_key = requested_trade_key
+    range_start = str(args.range_start or "").strip()
+    range_end = str(args.range_end or "").strip()
+    if bool(range_start) != bool(range_end):
+        print("[pages] --range-start and --range-end must be provided together.", flush=True)
+        return 1
+    if range_start:
+        dashboard_items = resolve_dashboard_range(config.output_dir, range_start=range_start, range_end=range_end)
+        trade_key = dashboard_items[-1][0]
+        dashboard_path = dashboard_items[-1][1]
+        requested_trade_key = ""
     else:
-        trade_key = infer_trade_key(dashboard_path)
+        requested_trade_key = normalize_trade_key(args.trade_date) if str(args.trade_date or "").strip() else ""
+        dashboard_path = resolve_dashboard_path(config.output_dir, trade_date=args.trade_date, dashboard=args.dashboard)
+        if str(args.dashboard or "").strip() and requested_trade_key:
+            trade_key = requested_trade_key
+        else:
+            trade_key = infer_trade_key(dashboard_path)
+        dashboard_items = [(trade_key, dashboard_path)]
     version_token = file_version_token(dashboard_path)
     remote_name = str(args.remote or "").strip() or "origin"
     branch = str(args.branch or "").strip() or config.pages_branch
     remote_url = resolve_publish_repo_url(args.repo_url, config.pages_repo_url, remote_name, git_env)
     pages_url = infer_pages_url(remote_url, trade_key, version_token=version_token)
 
+    if range_start:
+        print(f"[pages] dashboards={len(dashboard_items)} range={dashboard_items[0][0]}..{dashboard_items[-1][0]}", flush=True)
     print(f"[pages] dashboard={dashboard_path}", flush=True)
     if requested_trade_key and requested_trade_key != trade_key:
         print(f"[pages] requested_trade_date={requested_trade_key} resolved_trade_date={trade_key}", flush=True)
     print(f"[pages] repo={remote_url}", flush=True)
-    print(f"[pages] target=reports/{trade_key}/ index.html branch={branch} remote={remote_name}", flush=True)
+    if range_start:
+        print(f"[pages] target=reports/{dashboard_items[0][0]}..{dashboard_items[-1][0]} branch={branch} remote={remote_name}", flush=True)
+    else:
+        print(f"[pages] target=reports/{trade_key}/ index.html branch={branch} remote={remote_name}", flush=True)
     if pages_url:
         print(f"[pages] url={pages_url}", flush=True)
     if args.dry_run:
@@ -79,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         print(clone.stderr.strip(), flush=True)
         return 1
 
-    stage_dashboard(worktree, dashboard_path, trade_key)
+    stage_dashboards(worktree, dashboard_items)
     status = git_output(["git", "status", "--porcelain"], cwd=worktree, env=git_env)
     if not status.strip():
         print("[pages] no page changes to publish.", flush=True)
@@ -90,7 +109,11 @@ def main(argv: list[str] | None = None) -> int:
     if add.returncode != 0:
         print(add.stderr.strip(), flush=True)
         return 1
-    message = f"Publish ETF flow dashboard {format_trade_key(trade_key)}"
+    message = (
+        f"Publish ETF flow dashboards {format_trade_key(dashboard_items[0][0])} to {format_trade_key(dashboard_items[-1][0])}"
+        if range_start
+        else f"Publish ETF flow dashboard {format_trade_key(trade_key)}"
+    )
     commit = run_git(["git", "commit", "-m", message], cwd=worktree, env=git_env)
     if commit.returncode != 0:
         print(commit.stderr.strip(), flush=True)
@@ -183,6 +206,24 @@ def latest_dashboard_path(output_dir: Path, *, max_trade_key: str = "") -> Path:
     return sorted(candidates, key=lambda item: item[0])[-1][1]
 
 
+def resolve_dashboard_range(output_dir: Path, *, range_start: str, range_end: str) -> list[tuple[str, Path]]:
+    start_key = normalize_trade_key(range_start)
+    end_key = normalize_trade_key(range_end)
+    if end_key < start_key:
+        start_key, end_key = end_key, start_key
+    base = output_dir / "flow_monitor"
+    candidates: list[tuple[str, Path]] = []
+    if base.exists():
+        for folder in base.iterdir():
+            if folder.is_dir() and re.fullmatch(r"\d{8}", folder.name) and start_key <= folder.name <= end_key:
+                dashboard = folder / "etf_flow_dashboard.html"
+                if dashboard.exists():
+                    candidates.append((folder.name, dashboard.resolve()))
+    if not candidates:
+        raise FileNotFoundError(f"no generated dashboards found under {base} between {start_key} and {end_key}")
+    return sorted(candidates, key=lambda item: item[0])
+
+
 def normalize_trade_key(value: object) -> str:
     return normalize_date_input(value, field_name="trade_date").strftime("%Y%m%d")
 
@@ -195,9 +236,14 @@ def infer_trade_key(dashboard_path: Path) -> str:
 
 
 def stage_dashboard(worktree: Path, dashboard_path: Path, trade_key: str) -> None:
-    reports_dir = worktree / "reports" / trade_key
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(dashboard_path, reports_dir / "index.html")
+    stage_dashboards(worktree, [(trade_key, dashboard_path)])
+
+
+def stage_dashboards(worktree: Path, dashboard_items: list[tuple[str, Path]]) -> None:
+    for trade_key, dashboard_path in dashboard_items:
+        reports_dir = worktree / "reports" / trade_key
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dashboard_path, reports_dir / "index.html")
     (worktree / ".nojekyll").write_text("", encoding="utf-8")
     reports_root = worktree / "reports"
     write_reports_index(reports_root)

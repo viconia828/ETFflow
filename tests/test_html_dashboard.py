@@ -101,6 +101,19 @@ def test_write_dashboard_html_is_self_contained(tmp_path) -> None:
     assert "3月与前一等长交易日区间比较" in html
     assert "ETF 资金轮动" in html
     assert "金额单位：亿元" in html
+    assert "trend-view-layout" in html
+    assert "trend-summary-card" in html
+    assert "trend-summary-value" in html
+    assert "section-caption" in html
+    assert ".section-caption" in html
+    assert "font-size: 14px;" in html
+    assert "区间流向" in html
+    assert "区间流入流出静态展示" in html
+    assert 'class="axis-label y-label" x="92"' in html
+    assert 'text-anchor="end"' in html
+    assert "净流入" in html
+    assert "净流出" in html
+    assert "trend-layout" not in html
     assert "份额（亿份）" not in html
     assert "规模（亿元）" not in html
     assert "metric-button" not in html
