@@ -123,6 +123,10 @@ class TushareRateLimitError(RuntimeError):
     """Raised when Tushare reports API frequency throttling."""
 
 
+class TusharePermissionError(RuntimeError):
+    """Raised when the local Tushare account cannot access an API."""
+
+
 class TushareHttpClient:
     """Small HTTP wrapper around the official Tushare Pro POST API."""
 
@@ -174,6 +178,8 @@ class TushareHttpClient:
                 return self._normalize_response(payload["api_name"], parsed)
             except Exception as exc:
                 last_error = exc
+                if isinstance(exc, TusharePermissionError):
+                    raise exc
                 if attempt >= self.retry_count:
                     break
                 if isinstance(exc, TushareRateLimitError):
@@ -208,6 +214,8 @@ class TushareHttpClient:
         code = parsed.get("code", 0)
         if code not in (0, None):
             message = str(parsed.get("msg") or "").strip() or "unknown error"
+            if _is_permission_message(message):
+                raise TusharePermissionError(f"Tushare permission denied: {api_name} code={code} msg={message}")
             if str(code) == "40203" or "frequency" in message.lower() or "频率" in message or "超限" in message:
                 raise TushareRateLimitError(f"Tushare rate limit: {api_name} code={code} msg={message}")
             raise RuntimeError(f"Tushare API error: {api_name} code={code} msg={message}")
@@ -220,3 +228,8 @@ class TushareHttpClient:
         for item in items:
             rows.append({str(field): item[idx] if idx < len(item) else None for idx, field in enumerate(fields)})
         return rows
+
+
+def _is_permission_message(message: str) -> bool:
+    text = str(message or "").strip()
+    return "没有接口" in text or "无权限" in text or "访问权限" in text

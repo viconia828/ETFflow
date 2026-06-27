@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
 
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
+from etf_flow_monitor.utils.io import clean_excel_text, read_user_csv, write_user_csv  # noqa: E402
 
 
 CATEGORY_COLUMNS = [
@@ -48,7 +49,7 @@ EXCHANGE_NAME_NOISE = ("上海证券交易所", "深圳证券交易所")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build editable ETF category map from Tushare fund_basic.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--output", default="data/local_reference/etf_category_map.csv")
     parser.add_argument("--refresh", action="store_true", help="Bypass cached fund_basic and fetch from Tushare.")
     parser.add_argument("--include-inactive", action="store_true", help="Include delisted/inactive exchange-traded funds.")
@@ -74,10 +75,9 @@ def main(argv: list[str] | None = None) -> int:
         category_map = category_map.loc[category_map["is_etf_candidate"].eq("Y")].copy()
 
     if output_path.exists() and not args.overwrite_edits:
-        category_map = preserve_existing_edits(category_map, pd.read_csv(output_path, encoding="utf-8-sig"))
+        category_map = preserve_existing_edits(category_map, read_user_csv(output_path))
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    category_map.to_csv(output_path, index=False, encoding="utf-8-sig")
+    write_user_csv(output_path, category_map)
     print(f"rows: {len(category_map)}")
     print(f"output: {output_path}")
     print(f"cache_stats: {source.cache.snapshot_stats() if source.cache is not None else {}}")
@@ -114,19 +114,19 @@ def build_category_map(basic: pd.DataFrame) -> pd.DataFrame:
         rules.append(rule)
     result = pd.DataFrame(
         {
-            "fund_code": working["fund_code"].fillna("").astype(str).str.upper(),
-            "name": working["name"].fillna("").astype(str),
+            "fund_code": working["fund_code"].map(clean_excel_text).str.upper(),
+            "name": working["name"].map(clean_excel_text),
             "is_etf_candidate": candidate_flags,
             "candidate_rule": candidate_rules,
             "category": categories,
             "subcategory": subcategories,
-            "fund_type": working["fund_type"].fillna("").astype(str),
-            "benchmark": working["benchmark"].fillna("").astype(str),
-            "market": working["market"].fillna("").astype(str),
-            "status": working["status"].fillna("").astype(str),
+            "fund_type": working["fund_type"].map(clean_excel_text),
+            "benchmark": working["benchmark"].map(clean_excel_text),
+            "market": working["market"].map(clean_excel_text),
+            "status": working["status"].map(clean_excel_text),
             "list_date": _date_text(working["list_date"]),
             "delist_date": _date_text(working["delist_date"]),
-            "management": working["management"].fillna("").astype(str),
+            "management": working["management"].map(clean_excel_text),
             "sw_index_code": "",
             "sw_industry_name": "",
             "sw_level": "",
@@ -157,7 +157,10 @@ def preserve_existing_edits(fresh: pd.DataFrame, existing: pd.DataFrame) -> pd.D
     ]
     keep_columns = ["fund_code", *[column for column in editable_columns if column in existing.columns]]
     previous = existing[keep_columns].copy()
-    previous["fund_code"] = previous["fund_code"].fillna("").astype(str).str.upper()
+    previous["fund_code"] = previous["fund_code"].map(clean_excel_text).str.upper()
+    for column in editable_columns:
+        if column in previous.columns:
+            previous[column] = previous[column].map(clean_excel_text)
     merged = fresh.merge(previous, on="fund_code", how="left", suffixes=("", "_existing"))
     for column in editable_columns:
         existing_column = f"{column}_existing"
@@ -267,10 +270,7 @@ def _strip_exchange_name_noise(text: str) -> str:
 
 
 def _clean_text(value: object) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    text = str(value).strip()
-    return "" if text.lower() in {"nan", "<na>", "none"} else text
+    return clean_excel_text(value)
 
 
 def _date_text(series: pd.Series) -> pd.Series:

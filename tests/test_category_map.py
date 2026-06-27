@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from etf_flow_monitor.data.category_map import apply_category_map, category_map_stats
+from etf_flow_monitor.data.category_map import apply_category_map, category_map_stats, load_category_map
 from etf_flow_monitor.data.cross_border_fill import fill_cross_border_previous_values
 from etf_flow_monitor.utils.calendar import trading_calendar_from_frame
 from tools.validate_category_map import validate_category_map
@@ -108,6 +108,21 @@ def test_apply_category_map_merges_manual_fields() -> None:
         "category_mapped_funds": 1,
         "category_unmapped_funds": 1,
     }
+
+
+def test_category_map_loader_accepts_excel_formula_text_and_chinese(tmp_path) -> None:
+    path = tmp_path / "etf_category_map.csv"
+    path.write_text(
+        "\ufefffund_code,category,subcategory,review_note\n"
+        '="510300.SH",电子,半导体材料,人工确认\n',
+        encoding="utf-8",
+    )
+
+    category_map = load_category_map(path)
+
+    assert category_map.loc[0, "fund_code"] == "510300.SH"
+    assert category_map.loc[0, "category"] == "电子"
+    assert category_map.loc[0, "subcategory"] == "半导体材料"
 
 
 def test_trading_calendar_from_frame_maps_closed_day() -> None:

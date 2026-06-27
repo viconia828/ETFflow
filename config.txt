@@ -1,0 +1,64 @@
+# ETF 全市场资金流监控配置。
+# 本地密钥请放在 .local_secrets.local.json 或环境变量里，不要写入本文件。
+
+cache_dir = data/cache
+output_dir = outputs
+source_name = tushare
+calendar_exchange = SSE
+etf_market = E
+category_map_path = data/local_reference/etf_category_map.csv
+lifecycle_events_path = data/local_reference/etf_lifecycle_events.csv
+announcement_file_path = data/local_reference/etf_announcements.csv
+
+# ETF 生命周期公告下载主源。
+# cninfo 表示从巨潮资讯统一抓取基金公告；exchange 为交易所官网备用源；
+# tushare 仅作为手动备用源，普通用户无需修改。
+announcement_source = cninfo
+announcement_api_name = anns_d
+announcement_sleep_seconds = 0.20
+
+# 生命周期审计状态和待抓公告清单。
+# 状态文件记录生命周期表已核对到哪个本地数据日期。
+# flow_adjustments 是日常页面生成时使用的资金流修正表。
+lifecycle_status_path = data/local_reference/etf_lifecycle_status.json
+lifecycle_request_plan_path = data/local_reference/etf_lifecycle_announcement_requests.csv
+lifecycle_observation_plan_path = data/local_reference/etf_lifecycle_observation_jumps.csv
+lifecycle_pending_confirmations_path = data/local_reference/etf_lifecycle_pending_confirmations.csv
+lifecycle_manual_confirmations_path = data/local_reference/etf_lifecycle_manual_confirmations.csv
+lifecycle_flow_adjustments_path = data/local_reference/etf_lifecycle_flow_adjustments.csv
+
+# 未匹配份额跳变前后各抓几个官方交易日的基金公告。
+lifecycle_announcement_window_days = 5
+# 首轮窗口内完全未抓到公告时，下一轮扩大到前后各 N 个官方交易日再查一次。
+lifecycle_no_announcement_retry_window_days = 10
+
+# 生命周期审计中，份额相邻两期变化比例达到该阈值才列入跳变核对报告。
+# 0.50 表示 50%，0.20 表示 20%。
+lifecycle_min_share_change_pct = 0.50
+
+# 生命周期公告自动抓取只处理高疑似跳变：
+# 1）排除货币 ETF；2）排除上市未满 N 天；
+# 3）保留正向整数倍跳变、正向大于等于指定比例的跳变、或负向小于等于指定比例的跳变。
+# 不满足高疑似规则的跳变会写入 observation 表，只做本地观察，不自动抓公告。
+lifecycle_high_suspicion_min_listing_days = 60
+lifecycle_integer_ratio_tolerance = 0.03
+lifecycle_high_suspicion_positive_min_pct = 2.00
+lifecycle_high_suspicion_negative_max_pct = -0.50
+
+# GitHub Pages 自动发布目标。
+# pages_repo_url 留空时，会回退使用当前 Git 仓库的 origin。
+pages_repo_url = git@github.com:viconia828/ETFflow.git
+pages_branch = gh-pages
+
+# 用户可生成页面的最早日期。
+# 缓存更新工具会在后台从该日期往前 12 个月，并额外包含前一交易日开始补数据，
+# 用于计算 12 月区间和份额变化。
+local_cache_start_date = 20250101
+
+# 兼容旧脚本/临时体检工具的回看窗口。
+lookback_days = 370
+
+# Markdown 报告提示阈值。
+max_report_rows = 30
+min_amount_for_alert = 100000000
+min_abs_flow_for_alert = 50000000

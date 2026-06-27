@@ -18,12 +18,12 @@ if str(SRC_DIR) not in sys.path:
 
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import EXPECTED_CATEGORIES, normalize_category_map  # noqa: E402
-from etf_flow_monitor.utils.io import write_json  # noqa: E402
+from etf_flow_monitor.utils.io import clean_excel_text, read_user_csv, write_json  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate ETF category map CSV.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--category-map", default="")
     parser.add_argument("--output", default="")
     parser.add_argument("--strict", action="store_true", help="Return non-zero when pending manual-review rows exist.")
@@ -66,13 +66,13 @@ def validate_category_map(path: Path) -> dict[str, Any]:
         issues.append({"kind": "missing_file", "message": f"category map not found: {path}"})
         return _payload(pd.DataFrame(), issues, warnings)
 
-    raw = pd.read_csv(path, encoding="utf-8-sig")
+    raw = read_user_csv(path)
     required_columns = {"fund_code", "category", "subcategory", "review_note"}
     missing_columns = sorted(required_columns - set(raw.columns))
     for column in missing_columns:
         issues.append({"kind": "missing_column", "column": column})
 
-    raw_codes = raw["fund_code"].fillna("").astype(str).str.strip().str.upper() if "fund_code" in raw.columns else pd.Series(dtype="string")
+    raw_codes = raw["fund_code"].map(clean_excel_text).str.upper() if "fund_code" in raw.columns else pd.Series(dtype="string")
     duplicated = raw_codes.loc[raw_codes.ne("") & raw_codes.duplicated(keep=False)].drop_duplicates().tolist()
     if duplicated:
         issues.append({"kind": "duplicate_fund_code", "count": len(duplicated), "sample": duplicated[:20]})

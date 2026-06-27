@@ -11,6 +11,7 @@ import pandas as pd
 from etf_flow_monitor.config import load_config
 from etf_flow_monitor.data.category_map import apply_category_map, category_map_codes, category_map_stats, load_category_map
 from etf_flow_monitor.data.cross_border_fill import fill_cross_border_previous_values
+from etf_flow_monitor.data.lifecycle import apply_flow_adjustments_to_snapshot
 from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource
 from etf_flow_monitor.monitor.flow_metrics import (
     TUSHARE_DAILY_AMOUNT_UNIT_MULTIPLIER,
@@ -23,13 +24,13 @@ from etf_flow_monitor.monitor.html_dashboard import write_dashboard_html
 from etf_flow_monitor.monitor.report import write_markdown_report
 from etf_flow_monitor.run_ledger import RunLedger, make_log_dir
 from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, trading_calendar_from_frame
-from etf_flow_monitor.utils.io import format_tushare_date
+from etf_flow_monitor.utils.io import format_tushare_date, read_user_csv
 from etf_flow_monitor.utils.logger import configure_logging
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Whole-market ETF flow monitor starter.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--trade-date", default="")
     parser.add_argument("--dry-run", action="store_true", help="Create run ledger and report from empty frames without remote fetch.")
     parser.add_argument("--refresh", action="store_true", help="Bypass existing caches for source reads.")
@@ -120,7 +121,10 @@ def main(argv: list[str] | None = None) -> int:
                 "mapped": bool(trade_date != requested_date),
             }
 
-        start_date = trade_date - pd.Timedelta(days=max(config.lookback_days, 20))
+        if args.dry_run:
+            start_date = trade_date - pd.DateOffset(months=12)
+        else:
+            start_date = _report_history_start_date(calendar, trade_date)
         ledger.progress("load_inputs", f"trade_date={trade_date.date()}", calendar=calendar_payload)
 
         if args.dry_run:
@@ -177,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
 
         ledger.progress("build_metrics")
         flow = build_flow_snapshot(daily, shares, basic)
+        flow = _apply_lifecycle_flow_adjustments(flow, config.lifecycle_flow_adjustments_path, run_stats)
         flow = apply_category_map(flow, category_map)
         run_stats.update(
             {
@@ -228,7 +233,6 @@ def main(argv: list[str] | None = None) -> int:
             notes=[
                 "金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。",
                 "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
-                "本文件为单日静态快照，样式、数据和脚本均已内嵌，可直接转发分享。",
             ],
         )
         ledger.record_stats(run_stats)
@@ -259,6 +263,17 @@ def _open_trade_dates(calendar_frame: pd.DataFrame, start_date: pd.Timestamp, en
     if not dates:
         raise RuntimeError(f"Official trading calendar has no open dates between {start_key.date()} and {end_key.date()}.")
     return [pd.Timestamp(value).normalize() for value in dates]
+
+
+def _report_history_start_date(calendar: object, trade_date: pd.Timestamp) -> pd.Timestamp:
+    period_start = pd.Timestamp(trade_date).normalize() - pd.DateOffset(months=12)
+    try:
+        resolved = pd.Timestamp(calendar.resolve_request_date_market_date(period_start.date())).normalize()
+        if resolved < period_start:
+            return resolved
+        return pd.Timestamp(calendar.shift_trade_date(resolved.date(), -1)).normalize()
+    except Exception:  # noqa: BLE001
+        return period_start
 
 
 def _cache_coverage_error(cache_dir: Path, source_name: str, trade_dates: list[pd.Timestamp], trade_date: pd.Timestamp) -> str:
@@ -342,6 +357,28 @@ def _flow_stats(flow: pd.DataFrame) -> dict[str, int]:
         "flow_rows": int(len(flow)),
         "flow_funds": _nunique_code(flow),
     }
+
+
+def _apply_lifecycle_flow_adjustments(flow: pd.DataFrame, adjustments_path: Path, run_stats: dict[str, object]) -> pd.DataFrame:
+    if not adjustments_path.exists():
+        run_stats["lifecycle_flow_adjustment_rows"] = 0
+        run_stats["lifecycle_flow_adjusted_rows"] = 0
+        return flow
+    adjustments = read_user_csv(adjustments_path)
+    adjusted = apply_flow_adjustments_to_snapshot(flow, adjustments)
+    adjustment_count = (
+        int(pd.Series(adjusted.get("lifecycle_adjustment_action", pd.Series(dtype=object))).fillna("").astype(str).ne("").sum())
+        if not adjusted.empty
+        else 0
+    )
+    run_stats["lifecycle_flow_adjustments_path"] = str(adjustments_path)
+    run_stats["lifecycle_flow_adjustment_rows"] = int(len(adjustments))
+    run_stats["lifecycle_flow_adjusted_rows"] = adjustment_count
+    if "estimated_net_flow_adjustment" in adjusted.columns:
+        run_stats["lifecycle_flow_adjustment_amount"] = float(
+            pd.to_numeric(adjusted["estimated_net_flow_adjustment"], errors="coerce").fillna(0.0).sum()
+        )
+    return adjusted
 
 
 def _nunique_code(frame: pd.DataFrame) -> int:

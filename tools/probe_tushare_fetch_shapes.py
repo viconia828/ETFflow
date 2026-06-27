@@ -22,7 +22,7 @@ from etf_flow_monitor.utils.io import format_tushare_date  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Probe Tushare fund_daily/fund_share batch fetch shapes.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--trade-date", required=True, help="Trade date in YYYYMMDD or YYYY-MM-DD format.")
     parser.add_argument("--sample-code", default="510300.SH", help="Code used for per-code comparison.")
     return parser

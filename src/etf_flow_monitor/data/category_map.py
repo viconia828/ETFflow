@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from etf_flow_monitor.utils.io import clean_excel_text, read_user_csv
+
 
 CATEGORY_MAP_COLUMNS = [
     "fund_code",
@@ -76,7 +78,7 @@ def load_category_map(path: str | Path | None) -> pd.DataFrame:
     map_path = Path(path)
     if not map_path.exists():
         return pd.DataFrame(columns=CATEGORY_MAP_COLUMNS)
-    frame = pd.read_csv(map_path, encoding="utf-8-sig")
+    frame = read_user_csv(map_path)
     return normalize_category_map(frame)
 
 
@@ -88,7 +90,7 @@ def normalize_category_map(frame: pd.DataFrame | None) -> pd.DataFrame:
         if column not in working.columns:
             working[column] = pd.NA
     working = working[CATEGORY_MAP_COLUMNS].copy()
-    working["fund_code"] = working["fund_code"].fillna("").astype(str).str.strip().str.upper()
+    working["fund_code"] = working["fund_code"].map(clean_excel_text).str.upper()
     for column in ("category", "subcategory", "review_note"):
         working[column] = working[column].map(_clean_text)
     working = working.loc[working["fund_code"].ne("")]
@@ -106,7 +108,7 @@ def apply_category_map(flow: pd.DataFrame, category_map: pd.DataFrame | None) ->
         return result
 
     working = flow.copy()
-    working["fund_code"] = working["fund_code"].fillna("").astype(str).str.strip().str.upper()
+    working["fund_code"] = working["fund_code"].map(clean_excel_text).str.upper()
     normalized_map = normalize_category_map(category_map)
 
     for column in FLOW_CATEGORY_COLUMNS:
@@ -160,7 +162,4 @@ def category_map_codes(category_map: pd.DataFrame | None) -> list[str]:
 
 
 def _clean_text(value: object) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    text = str(value).strip()
-    return "" if text.lower() in {"nan", "<na>", "none"} else text
+    return clean_excel_text(value)

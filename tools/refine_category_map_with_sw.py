@@ -19,6 +19,7 @@ if str(SRC_DIR) not in sys.path:
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.cache_store import CacheStore  # noqa: E402
 from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
+from etf_flow_monitor.utils.io import clean_excel_text, read_user_csv, write_user_csv  # noqa: E402
 from tools.build_etf_category_map import infer_category  # noqa: E402
 
 
@@ -67,7 +68,7 @@ class SwMatch:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Refine ETF category map with SW2021 industry index names.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--category-map", default="")
     parser.add_argument("--refresh", action="store_true", help="Refresh SW index classification cache from Tushare.")
     parser.add_argument("--overwrite-reviewed", action="store_true", help="Also overwrite rows with non-empty review_note.")
@@ -81,10 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     map_path = Path(args.category_map or config.category_map_path)
     if not map_path.is_absolute():
         map_path = PROJECT_ROOT / map_path
-    category_map = pd.read_csv(map_path, encoding="utf-8-sig")
+    category_map = read_user_csv(map_path)
     sw_frame = load_sw_index_classification(config.cache_dir, config_path, refresh=args.refresh)
     refined, summary = refine_category_map(category_map, sw_frame, overwrite_reviewed=args.overwrite_reviewed)
-    refined.to_csv(map_path, index=False, encoding="utf-8-sig")
+    write_user_csv(map_path, refined)
     print(f"rows: {len(refined)}")
     print(f"refined_rows: {summary['refined_rows']}")
     print(f"preserved_reviewed_rows: {summary['preserved_reviewed_rows']}")
@@ -115,7 +116,7 @@ def refine_category_map(category_map: pd.DataFrame, sw_frame: pd.DataFrame, *, o
     for column in SW_OUTPUT_COLUMNS:
         if column not in working.columns:
             working[column] = ""
-        working[column] = working[column].fillna("").astype(str)
+            working[column] = working[column].map(clean_excel_text)
     sw_index = _build_sw_index(sw_frame)
     refined_rows = 0
     preserved_reviewed_rows = 0
@@ -157,7 +158,7 @@ def _normalize_sw_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
             working[column] = ""
     working = working[SW_COLUMNS].copy()
     for column in SW_COLUMNS:
-        working[column] = working[column].fillna("").astype(str).str.strip()
+        working[column] = working[column].map(clean_excel_text)
     return working.loc[working["industry_name"].ne("")].drop_duplicates(subset=["index_code", "industry_code"], keep="last").reset_index(drop=True)
 
 
@@ -328,10 +329,7 @@ def _strip_exchange_name_noise(text: str) -> str:
 
 
 def _clean_text(value: object) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    text = str(value).strip()
-    return "" if text.lower() in {"nan", "<na>", "none"} else text
+    return clean_excel_text(value)
 
 
 if __name__ == "__main__":

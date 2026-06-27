@@ -25,7 +25,7 @@ from etf_flow_monitor.utils.io import write_json  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Check Tushare ETF source availability and key fields.")
-    parser.add_argument("--config", default="config.example.txt")
+    parser.add_argument("--config", default="config.txt")
     parser.add_argument("--trade-date", default="")
     parser.add_argument("--sample-size", type=int, default=5)
     parser.add_argument("--refresh", action="store_true", help="Bypass caches for checked source reads.")

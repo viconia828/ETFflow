@@ -83,14 +83,18 @@ def _render_document(
         )
         for item in periods
     )
-    latest_flow = _latest_day_flow(flow, trade_date)
-    detail_table = _render_detail_table(latest_flow)
+    detail_panels = "\n".join(
+        _render_detail_period(
+            period_models[item.key],
+            is_active=item.key == default_period,
+        )
+        for item in periods
+    )
     note_lines = [str(item).strip() for item in notes if str(item).strip()]
     if not note_lines:
         note_lines = [
             "金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。",
             "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
-            "本文件为单日静态快照，样式、数据和脚本均已内嵌，可直接转发分享。",
         ]
     if DIRECTION_NOTE not in note_lines:
         note_lines.append(DIRECTION_NOTE)
@@ -101,6 +105,9 @@ def _render_document(
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(title)} {trade_date.strftime("%Y-%m-%d")}</title>
   <style>
@@ -133,17 +140,16 @@ def _render_document(
       <button class="view-button" type="button" data-view-target="detail">明细</button>
     </nav>
 
-    <section class="control-row" aria-label="区间和指标" data-period-controls>
+    <section class="control-row" aria-label="区间">
       <div class="period-buttons">{period_buttons}</div>
-      <div class="metric-buttons" aria-label="指标切换">
-        <button class="metric-button is-active" type="button">金额（亿元）</button>
-        <button class="metric-button is-muted" type="button" title="待份额字段口径验证后接入">份额（亿份）</button>
-        <button class="metric-button is-muted" type="button" title="待规模字段口径验证后接入">规模（亿元）</button>
-      </div>
     </section>
 
     <section class="view-panel is-active" data-view-panel="trend">
       {trend_panels}
+      <section class="notes-section">
+        <h2>口径说明</h2>
+        <ul>{notes_html}</ul>
+      </section>
     </section>
 
     <section class="view-panel" data-view-panel="rotation">
@@ -151,18 +157,7 @@ def _render_document(
     </section>
 
     <section class="view-panel detail-view" data-view-panel="detail">
-      <section class="detail-section">
-        <div class="section-title">
-          <h2>今日 ETF 明细</h2>
-          <span>流入与流出分开排序，各保留前十</span>
-        </div>
-        {detail_table}
-      </section>
-
-      <section class="notes-section">
-        <h2>口径说明</h2>
-        <ul>{notes_html}</ul>
-      </section>
+      {detail_panels}
     </section>
   </main>
   <script>
@@ -197,6 +192,7 @@ def _build_period_model(summary: pd.DataFrame, flow: pd.DataFrame, trade_date: p
         "flow": flow_period,
         "trend_rows": trend_rows,
         "category_rows": category_rows,
+        "detail_flow": _detail_rows(flow_period),
         "daily_net_yi": _to_yi(daily_net),
         "period_net_yi": _to_yi(period_net),
         "inflow_total_yi": inflow_total,
@@ -222,17 +218,12 @@ def _render_trend_period(model: dict, *, is_active: bool) -> str:
             <div class="section-title">
               <div>
                 <h2>滚动 {escape(period.label)} 净额</h2>
-                <span>负值代表资金净流出</span>
+                <span>金额单位：亿元，负值代表资金净流出</span>
               </div>
             </div>
             {_render_trend_svg(model["trend_rows"])}
             <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
           </article>
-          <aside class="summary-stack">
-            {_metric_card("区间累计", model["period_net_yi"], "亿元", period.label)}
-            {_metric_card("当日", model["daily_net_yi"], "亿元", model["daily_caption"])}
-            {_text_card("当前方向", model["direction"], model["direction_class"], model["direction_caption"])}
-          </aside>
         </div>
       </div>
 """
@@ -261,6 +252,22 @@ def _render_rotation_period(model: dict, *, is_active: bool) -> str:
         <section class="insight-card">
           <h2>解读</h2>
           {_render_insights(model["insights"])}
+        </section>
+      </div>
+"""
+
+
+def _render_detail_period(model: dict, *, is_active: bool) -> str:
+    period = model["period"]
+    active_class = " is-active" if is_active else ""
+    return f"""
+      <div class="period-panel{active_class}" data-period-panel="{escape(period.key)}">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>{escape(period.label)} ETF 明细</h2>
+            <span>按区间累计估算净额排序，流入与流出各保留前十</span>
+          </div>
+          {_render_detail_table(model["detail_flow"])}
         </section>
       </div>
 """
@@ -401,7 +408,7 @@ def _rotation_rows(rows: list[dict[str, object]], max_abs: float, *, is_positive
 
 def _render_detail_table(frame: pd.DataFrame) -> str:
     if frame.empty:
-        return '<div class="empty-state">暂无当日 ETF 明细数据</div>'
+        return '<div class="empty-state">暂无区间 ETF 明细数据</div>'
     working = frame.copy()
     working["estimated_net_flow"] = pd.to_numeric(working.get("estimated_net_flow"), errors="coerce").fillna(0.0)
     working["amount"] = pd.to_numeric(working.get("amount"), errors="coerce").fillna(0.0)
@@ -438,16 +445,20 @@ def _render_detail_rank_table(title: str, frame: pd.DataFrame, empty_message: st
         amount_yi = _to_yi(row.get("amount", 0.0))
         pct_change = row.get("pct_change", 0.0)
         try:
-            pct_text = f"{float(pct_change):+.2f}%"
+            pct_number = float(pct_change)
+            pct_text = "" if pd.isna(pct_number) else f"{pct_number:+.2f}%"
         except (TypeError, ValueError):
             pct_text = ""
         flow_class = _value_class(flow_yi)
+        category_label = _category_label(row)
+        category_title = _category_display(row)
+        category_title_attr = f' title="{escape(category_title)}"' if category_title != category_label else ""
         rows.append(
             "<tr>"
             f'<td class="rank-cell">{rank}</td>'
             f"<td>{escape(str(row.get('fund_code', '')))}</td>"
             f"<td>{escape(str(row.get('name', '') or ''))}</td>"
-            f"<td>{escape(_category_display(row))}</td>"
+            f'<td class="category-cell"{category_title_attr}>{escape(category_label)}</td>'
             f"<td>{escape(pct_text)}</td>"
             f"<td>{escape(_plain_number(amount_yi))}</td>"
             f'<td class="{flow_class}">{escape(_signed_number(flow_yi))}</td>'
@@ -459,7 +470,7 @@ def _render_detail_rank_table(title: str, frame: pd.DataFrame, empty_message: st
         <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
           </thead>
           <tbody>{"".join(rows)}</tbody>
         </table>
@@ -469,10 +480,15 @@ def _render_detail_rank_table(title: str, frame: pd.DataFrame, empty_message: st
 
 
 def _category_display(row: pd.Series) -> str:
-    category = str(row.get("category", "") or "").strip() or "其他"
+    category = _category_label(row)
     subcategory = str(row.get("subcategory", "") or "").strip()
     if subcategory and subcategory != category:
         return f"{category} / {subcategory}"
+    return category
+
+
+def _category_label(row: pd.Series) -> str:
+    category = str(row.get("category", "") or "").strip() or "其他"
     return category
 
 
@@ -538,6 +554,7 @@ def _prepare_flow(frame: pd.DataFrame | None) -> pd.DataFrame:
         "fund_code",
         "trade_date",
         "name",
+        "close",
         "pct_change",
         "amount",
         "estimated_net_flow",
@@ -553,7 +570,9 @@ def _prepare_flow(frame: pd.DataFrame | None) -> pd.DataFrame:
         if column not in working.columns:
             working[column] = pd.NA
     working["trade_date"] = pd.to_datetime(working["trade_date"], errors="coerce").dt.normalize()
-    for column in ("pct_change", "amount", "estimated_net_flow"):
+    for column in ("close", "pct_change"):
+        working[column] = pd.to_numeric(working[column], errors="coerce")
+    for column in ("amount", "estimated_net_flow"):
         working[column] = pd.to_numeric(working[column], errors="coerce").fillna(0.0)
     working["fund_code"] = working["fund_code"].fillna("").astype(str).str.upper()
     working["name"] = working["name"].fillna("").astype(str)
@@ -577,19 +596,6 @@ def _filter_period(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) 
         return frame.copy()
     dates = pd.to_datetime(frame["trade_date"], errors="coerce").dt.normalize()
     return frame.loc[dates.ge(start) & dates.le(end)].copy().reset_index(drop=True)
-
-
-def _latest_day_flow(flow: pd.DataFrame, trade_date: pd.Timestamp) -> pd.DataFrame:
-    if flow.empty:
-        return flow.copy()
-    exact = flow.loc[flow["trade_date"].eq(trade_date)].copy()
-    if not exact.empty:
-        return exact
-    candidates = flow.loc[flow["trade_date"].le(trade_date)].copy()
-    if candidates.empty:
-        return candidates
-    latest = candidates["trade_date"].max()
-    return candidates.loc[candidates["trade_date"].eq(latest)].copy()
 
 
 def _trend_rows(summary: pd.DataFrame) -> list[dict[str, object]]:
@@ -635,6 +641,56 @@ def _category_rows(flow: pd.DataFrame) -> list[dict[str, object]]:
     ]
 
 
+def _detail_rows(flow: pd.DataFrame) -> pd.DataFrame:
+    if flow.empty:
+        return flow.copy()
+    working = flow.sort_values(["trade_date", "fund_code"], kind="stable").copy()
+    working["estimated_net_flow"] = pd.to_numeric(working.get("estimated_net_flow"), errors="coerce").fillna(0.0)
+    working["amount"] = pd.to_numeric(working.get("amount"), errors="coerce").fillna(0.0)
+    working["close"] = pd.to_numeric(working.get("close"), errors="coerce")
+    working["pct_change"] = pd.to_numeric(working.get("pct_change"), errors="coerce")
+    grouped = (
+        working.groupby("fund_code", as_index=False, sort=False)
+        .agg(
+            trade_date=("trade_date", "max"),
+            name=("name", _last_non_empty),
+            pct_change=("pct_change", _period_pct_change),
+            pct_change_count=("pct_change", "count"),
+            first_close=("close", "first"),
+            last_close=("close", "last"),
+            amount=("amount", "sum"),
+            estimated_net_flow=("estimated_net_flow", "sum"),
+            category=("category", _last_non_empty),
+            subcategory=("subcategory", _last_non_empty),
+        )
+        .copy()
+    )
+    fallback_mask = grouped["pct_change_count"].eq(0) & grouped["first_close"].gt(0) & grouped["last_close"].gt(0)
+    grouped.loc[fallback_mask, "pct_change"] = (
+        grouped.loc[fallback_mask, "last_close"] / grouped.loc[fallback_mask, "first_close"] - 1.0
+    ) * 100.0
+    grouped = grouped.drop(columns=["pct_change_count", "first_close", "last_close"])
+    return grouped.sort_values(["estimated_net_flow", "amount"], ascending=[False, False], kind="stable").reset_index(drop=True)
+
+
+def _period_pct_change(values: pd.Series) -> float:
+    daily = pd.to_numeric(values, errors="coerce").dropna()
+    if daily.empty:
+        return float("nan")
+    compounded = (daily / 100.0 + 1.0).prod() - 1.0
+    return float(compounded * 100.0)
+
+
+def _last_non_empty(values: pd.Series) -> str:
+    for value in reversed(values.tolist()):
+        if pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"nan", "<na>", "none"}:
+            return text
+    return ""
+
+
 def _period_specs(end: pd.Timestamp) -> list[PeriodSpec]:
     return [
         PeriodSpec("1D", "最近1日", end, True),
@@ -646,13 +702,6 @@ def _period_specs(end: pd.Timestamp) -> list[PeriodSpec]:
         PeriodSpec("YTD", "今年来", pd.Timestamp(year=end.year, month=1, day=1)),
         PeriodSpec("12M", "12月", end - pd.DateOffset(months=12)),
     ]
-
-
-def _find_period(periods: list[PeriodSpec], key: str) -> PeriodSpec:
-    for item in periods:
-        if item.key == key:
-            return item
-    return periods[0]
 
 
 def _infer_category(code: str, name: str) -> str:
@@ -1006,12 +1055,12 @@ button, table { font: inherit; }
 .view-tabs, .control-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
   margin: 14px 0;
 }
 .view-tabs { justify-content: flex-start; }
-.view-button, .period-button, .metric-button {
+.view-button, .period-button {
   height: 50px;
   padding: 0 22px;
   border: 1px solid var(--line);
@@ -1021,28 +1070,21 @@ button, table { font: inherit; }
   font-weight: 900;
   cursor: pointer;
 }
-.view-button.is-active, .period-button.is-active, .metric-button.is-active {
+.view-button.is-active, .period-button.is-active {
   background: var(--cyan);
   color: #ffffff;
   border-color: #38d2e0;
   box-shadow: 0 0 0 1px rgba(38, 198, 218, 0.24), 0 8px 28px rgba(38, 198, 218, 0.16);
 }
-.metric-button.is-muted {
-  opacity: 0.66;
-  cursor: default;
-}
-.period-buttons, .metric-buttons {
+.period-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 .view-panel, .period-panel { display: none; }
 .view-panel.is-active, .period-panel.is-active { display: block; }
-.control-row.is-hidden { display: none; }
 .trend-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 370px;
-  gap: 26px;
+  display: block;
 }
 .chart-card, .insight-card, .detail-section, .notes-section {
   border: 1px solid var(--line);
@@ -1097,8 +1139,6 @@ button, table { font: inherit; }
   font-size: 17px;
   font-weight: 800;
 }
-.summary-stack { display: grid; gap: 18px; }
-.summary-stack .metric-card { min-height: 170px; display: flex; flex-direction: column; justify-content: center; }
 .rotation-header {
   display: flex;
   justify-content: space-between;
@@ -1264,6 +1304,7 @@ td {
   font-family: Consolas, "Cascadia Mono", monospace;
   font-weight: 900;
 }
+.category-cell[title] { cursor: help; }
 .notes-section ul {
   margin: 14px 0 0;
   padding-left: 20px;
@@ -1283,7 +1324,7 @@ td {
   .rotation-axis { display: none; }
   .rotation-row, .rotation-side-left .rotation-row { grid-template-columns: 105px 82px minmax(90px, 1fr); }
   .rotation-label { font-size: 16px; }
-  .period-button, .metric-button, .view-button { height: 44px; padding: 0 14px; }
+  .period-button, .view-button { height: 44px; padding: 0 14px; }
   .detail-leaderboards { grid-template-columns: 1fr; }
   .detail-board + .detail-board { padding-left: 0; border-left: 0; padding-top: 18px; border-top: 1px solid var(--line-soft); }
 }
@@ -1349,9 +1390,6 @@ def _script() -> str:
     });
     document.querySelectorAll("[data-view-panel]").forEach(function (panel) {
       panel.classList.toggle("is-active", panel.getAttribute("data-view-panel") === name);
-    });
-    document.querySelectorAll("[data-period-controls]").forEach(function (controls) {
-      controls.classList.toggle("is-hidden", name === "detail");
     });
   }
   function setPeriod(key) {
