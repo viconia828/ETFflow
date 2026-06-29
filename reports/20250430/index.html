@@ -1,0 +1,1556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>全市场 ETF 净流入走势 2025-04-30</title>
+  <style>
+
+:root {
+  color-scheme: dark;
+  --bg: #070b10;
+  --panel: #111418;
+  --panel-soft: #151922;
+  --line: #29313b;
+  --line-soft: #1f2630;
+  --text: #f3f6fb;
+  --muted: #9aa4b2;
+  --cyan: #26c6da;
+  --cyan-soft: rgba(38, 198, 218, 0.18);
+  --positive: #f05266;
+  --negative: #31c48d;
+  --neutral: #b7c0cc;
+  --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  letter-spacing: 0;
+}
+button, table { font: inherit; }
+.dashboard-shell {
+  width: min(1600px, calc(100vw - 32px));
+  margin: 16px auto;
+  padding: 18px;
+  border: 1px solid var(--line-soft);
+  background: #090d13;
+}
+.hero {
+  min-height: 142px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 34px 38px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.hero h1 {
+  margin: 0;
+  font-size: clamp(30px, 3.2vw, 46px);
+  line-height: 1.05;
+  font-weight: 900;
+}
+.hero p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 700;
+}
+.hero-actions { display: flex; gap: 14px; }
+.icon-button {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--text);
+  background: #191d27;
+  cursor: pointer;
+}
+.icon-button:hover { border-color: var(--cyan); color: var(--cyan); }
+.camera-icon, .close-icon {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 20px;
+}
+.camera-icon::before {
+  content: "";
+  position: absolute;
+  inset: 4px 1px 1px;
+  border: 3px solid currentColor;
+  border-radius: 5px;
+}
+.camera-icon::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  left: 8px;
+  top: 9px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+.close-icon::before, .close-icon::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 1px;
+  width: 3px;
+  height: 24px;
+  background: currentColor;
+  border-radius: 2px;
+}
+.close-icon::before { transform: rotate(45deg); }
+.close-icon::after { transform: rotate(-45deg); }
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+.metric-card {
+  min-height: 116px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.metric-card span, .compact-stat span {
+  display: block;
+  color: var(--muted);
+  font-weight: 800;
+}
+.metric-card strong {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: clamp(27px, 2.8vw, 42px);
+  line-height: 1;
+  font-weight: 900;
+}
+.metric-card em {
+  margin-left: 8px;
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 800;
+}
+.metric-card small {
+  display: block;
+  margin-top: 12px;
+  color: #6f7b8a;
+  font-size: 13px;
+}
+.view-tabs, .control-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  margin: 14px 0;
+}
+.view-tabs { justify-content: flex-start; }
+.view-button, .period-button {
+  height: 50px;
+  padding: 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #171b24;
+  color: var(--muted);
+  font-weight: 900;
+  cursor: pointer;
+}
+.view-button.is-active, .period-button.is-active {
+  background: var(--cyan);
+  color: #ffffff;
+  border-color: #38d2e0;
+  box-shadow: 0 0 0 1px rgba(38, 198, 218, 0.24), 0 8px 28px rgba(38, 198, 218, 0.16);
+}
+.period-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.view-panel, .period-panel { display: none; }
+.view-panel.is-active, .period-panel.is-active { display: block; }
+.trend-view-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 18px;
+  align-items: stretch;
+}
+.trend-panel-stack {
+  display: grid;
+  min-width: 0;
+}
+.trend-panel-stack > .period-panel.is-active { height: 100%; }
+.chart-card, .insight-card, .detail-section, .notes-section, .trend-summary-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.chart-card { padding: 26px 30px; }
+.trend-card {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 520px;
+}
+.section-title {
+  display: block;
+  margin-bottom: 0;
+}
+.section-title h2, .rotation-header h2, .insight-card h2, .notes-section h2, .trend-summary-card h2 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 900;
+}
+.section-caption {
+  display: block;
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+.trend-svg {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+}
+.chart-bg { fill: #101419; }
+.grid-line { stroke: #1b2430; stroke-width: 1; }
+.zero-line { stroke: #42505f; stroke-width: 1.5; }
+.trend-area { fill: url(#trendAreaGradient); }
+.trend-line {
+  fill: none;
+  stroke: #27c7d8;
+  stroke-width: 7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 7px rgba(39, 199, 216, 0.5));
+}
+.trend-point { fill: #27c7d8; stroke: #d9fbff; stroke-width: 2; }
+.axis-label, .empty-label {
+  fill: var(--muted);
+  font-size: 18px;
+  font-weight: 800;
+}
+.y-label { font-family: Consolas, "Cascadia Mono", monospace; }
+.chart-footnote {
+  margin-top: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 17px;
+  font-weight: 800;
+}
+.trend-summary-card {
+  box-sizing: border-box;
+  position: sticky;
+  top: 16px;
+  padding: 24px;
+}
+.trend-summary-list {
+  display: grid;
+  gap: 8px;
+}
+.trend-summary-row {
+  display: grid;
+  grid-template-columns: 72px 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.trend-summary-row:first-child { border-top: 0; }
+.trend-summary-label {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+.trend-summary-direction {
+  font-size: 13px;
+  font-weight: 900;
+}
+.trend-summary-value {
+  min-width: 0;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
+}
+.rotation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.rotation-stats {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 34px;
+  align-items: start;
+}
+.compact-stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 900;
+}
+.rotation-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  gap: 26px;
+  min-height: 480px;
+  padding: 22px 30px;
+}
+.rotation-axis {
+  width: 1px;
+  min-height: 100%;
+  background: var(--line);
+}
+.rotation-side {
+  display: grid;
+  align-content: center;
+  gap: 24px;
+}
+.rotation-row {
+  display: grid;
+  grid-template-columns: 145px 90px minmax(110px, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 38px;
+}
+.rotation-side-left .rotation-row {
+  grid-template-columns: 145px 90px minmax(110px, 1fr);
+}
+.rotation-side-left .rotation-track {
+  justify-content: flex-end;
+}
+.rotation-label {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 900;
+  text-align: right;
+}
+.rotation-value {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 20px;
+  font-weight: 900;
+}
+.rotation-row.negative .rotation-value { color: var(--negative); }
+.rotation-row.positive .rotation-value { color: var(--positive); }
+.rotation-track {
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+.rotation-bar {
+  height: 100%;
+  display: block;
+  border-radius: 8px;
+  opacity: 0.82;
+}
+.negative .rotation-bar { background: linear-gradient(90deg, #187a5e, var(--negative)); }
+.positive .rotation-bar { background: linear-gradient(90deg, var(--positive), #a92538); }
+.empty-side, .empty-state {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 800;
+}
+.insight-card {
+  margin-top: 26px;
+  padding: 28px 30px;
+}
+.insight-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.insight-list li {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.insight-list span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--cyan);
+  background: var(--cyan-soft);
+  font-size: 20px;
+  font-weight: 900;
+}
+.detail-section, .notes-section {
+  margin-top: 26px;
+  padding: 26px 30px;
+}
+.detail-view .detail-section:first-child { margin-top: 0; }
+.detail-leaderboards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.detail-board {
+  min-width: 0;
+}
+.detail-board + .detail-board {
+  padding-left: 24px;
+  border-left: 1px solid var(--line-soft);
+}
+.detail-board h3 {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 900;
+}
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+}
+.detail-board table { min-width: 760px; }
+th, td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+th {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+td {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+.rank-cell {
+  color: var(--muted);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-weight: 900;
+}
+.notes-section ul {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.7;
+}
+.flow-positive { color: var(--positive); }
+.flow-negative { color: var(--negative); }
+.flow-neutral { color: var(--neutral); }
+@media (max-width: 1100px) {
+  .dashboard-shell { width: min(100vw, 100%); margin: 0; padding: 12px; }
+  .hero, .rotation-header, .control-row { flex-direction: column; align-items: stretch; }
+  .metric-strip, .trend-view-layout, .insight-list { grid-template-columns: 1fr; }
+  .trend-summary-card { position: static; }
+  .rotation-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rotation-grid { grid-template-columns: 1fr; gap: 18px; padding: 8px 0; }
+  .rotation-axis { display: none; }
+  .rotation-row, .rotation-side-left .rotation-row { grid-template-columns: 105px 82px minmax(90px, 1fr); }
+  .rotation-label { font-size: 16px; }
+  .period-button, .view-button { height: 44px; padding: 0 14px; }
+  .detail-leaderboards { grid-template-columns: 1fr; }
+  .detail-board + .detail-board { padding-left: 0; border-left: 0; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+}
+@media print {
+  body { background: #ffffff; color: #111111; }
+  .dashboard-shell { width: 100%; margin: 0; border: 0; background: #ffffff; }
+  .icon-button, .view-tabs, .control-row { display: none; }
+  .view-panel, .period-panel { display: block; page-break-inside: avoid; }
+}
+
+  </style>
+</head>
+<body>
+  <main class="dashboard-shell">
+    <header class="hero">
+      <div>
+        <h1>全市场 ETF 净流入走势</h1>
+        <p>截至 2025-04-30 · 生成时间 2026-06-29 21:33:09</p>
+      </div>
+      <div class="hero-actions" aria-label="页面操作">
+        <button class="icon-button" type="button" title="打印或保存为 PDF" onclick="window.print()"><span class="camera-icon"></span></button>
+        <button class="icon-button" type="button" title="关闭窗口" onclick="window.close()"><span class="close-icon"></span></button>
+      </div>
+    </header>
+
+    <section class="metric-strip" aria-label="核心指标">
+      <article class="metric-card" data-header-card="period-net"><span>区间累计</span><strong class="flow-positive" data-header-value>+4,116</strong><em>亿元</em><small data-header-caption>6月累计估算净额</small></article>
+      <article class="metric-card" data-header-card="daily-net"><span>当日</span><strong class="flow-positive" data-header-value>+2.97</strong><em>亿元</em><small data-header-caption>2025-04-30 当日估算净额</small></article>
+      <article class="metric-card" data-header-card="direction"><span>当前方向</span><strong class="flow-positive" data-header-value>区间净流入</strong><small data-header-caption>6月全量方向</small></article>
+      <article class="metric-card" data-header-card="destination"><span>最大去向</span><strong class="flow-positive" data-header-value>港股</strong><small data-header-caption>6月最大去向</small></article>
+    </section>
+
+    <nav class="view-tabs" aria-label="视图切换">
+      <button class="view-button is-active" type="button" data-view-target="trend">走势</button>
+      <button class="view-button" type="button" data-view-target="rotation">轮动</button>
+      <button class="view-button" type="button" data-view-target="detail">明细</button>
+    </nav>
+
+    <section class="control-row" aria-label="区间">
+      <div class="period-buttons"><button class="period-button" type="button" data-period-target="1D" data-period-net-text="+2.97" data-period-net-class="flow-positive" data-period-caption="最近1日累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="流出转流入" data-direction-class="flow-positive" data-direction-caption="最近1日较上一等长区间" data-destination-text="债券" data-destination-class="flow-positive" data-destination-caption="最近1日最大去向">最近1日</button>
+<button class="period-button" type="button" data-period-target="1W" data-period-net-text="-30.55" data-period-net-class="flow-negative" data-period-caption="1周累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="流入转流出" data-direction-class="flow-negative" data-direction-caption="1周较上一等长区间" data-destination-text="债券" data-destination-class="flow-positive" data-destination-caption="1周最大去向">1周</button>
+<button class="period-button" type="button" data-period-target="2W" data-period-net-text="+634.3" data-period-net-class="flow-positive" data-period-caption="2周累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="净流入缩小" data-direction-class="flow-negative" data-direction-caption="2周较上一等长区间" data-destination-text="商品" data-destination-class="flow-positive" data-destination-caption="2周最大去向">2周</button>
+<button class="period-button" type="button" data-period-target="1M" data-period-net-text="+3,408" data-period-net-class="flow-positive" data-period-caption="1月累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="净流入扩大" data-direction-class="flow-positive" data-direction-caption="1月较上一等长区间" data-destination-text="宽基" data-destination-class="flow-positive" data-destination-caption="1月最大去向">1月</button>
+<button class="period-button" type="button" data-period-target="3M" data-period-net-text="+2,365" data-period-net-class="flow-positive" data-period-caption="3月累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="净流入扩大" data-direction-class="flow-positive" data-direction-caption="3月较上一等长区间" data-destination-text="商品" data-destination-class="flow-positive" data-destination-caption="3月最大去向">3月</button>
+<button class="period-button is-active" type="button" data-period-target="6M" data-period-net-text="+4,116" data-period-net-class="flow-positive" data-period-caption="6月累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="区间净流入" data-direction-class="flow-positive" data-direction-caption="6月全量方向" data-destination-text="港股" data-destination-class="flow-positive" data-destination-caption="6月最大去向">6月</button>
+<button class="period-button" type="button" data-period-target="YTD" data-period-net-text="+2,722" data-period-net-class="flow-positive" data-period-caption="今年来累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="区间净流入" data-direction-class="flow-positive" data-direction-caption="今年来全量方向" data-destination-text="商品" data-destination-class="flow-positive" data-destination-caption="今年来最大去向">今年来</button>
+<button class="period-button" type="button" data-period-target="12M" data-period-net-text="+9,484" data-period-net-class="flow-positive" data-period-caption="12月累计估算净额" data-daily-net-text="+2.97" data-daily-net-class="flow-positive" data-daily-caption="2025-04-30 当日估算净额" data-direction-text="区间净流入" data-direction-class="flow-positive" data-direction-caption="12月全量方向" data-destination-text="宽基" data-destination-class="flow-positive" data-destination-caption="12月最大去向">12月</button></div>
+    </section>
+
+    <section class="view-panel is-active" data-view-panel="trend">
+      <div class="trend-view-layout">
+        <div class="trend-panel-stack">
+      <div class="period-panel" data-period-panel="1D">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 最近1日 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-0.4</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">0.6</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">1.5</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">2.4</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">3.3</text>
+            <line class="zero-line" x1="108" y1="312.19" x2="972" y2="312.19"></line>
+            <path class="trend-area" d="M 972.00 312.19 L 972.00 63.81 L 972.00 312.19 Z"></path>
+            <path class="trend-line" d="M 972.00 63.81"></path>
+            <circle class="trend-point" cx="972.00" cy="63.81" r="5"></circle>
+            <text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1W">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 1周 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-49.7</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">-7.8</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">34.1</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">76.0</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">118</text>
+            <line class="zero-line" x1="108" y1="250.60" x2="972" y2="250.60"></line>
+            <path class="trend-area" d="M 108.00 250.60 L 108.00 144.37 L 280.80 108.90 L 453.60 63.81 L 626.40 199.12 L 799.20 312.19 L 972.00 306.73 L 972.00 250.60 Z"></path>
+            <path class="trend-line" d="M 108.00 144.37 L 280.80 108.90 L 453.60 63.81 L 626.40 199.12 L 799.20 312.19 L 972.00 306.73"></path>
+            <circle class="trend-point" cx="972.00" cy="306.73" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">04-23</text>
+<text class="axis-label" x="280.80" y="375" text-anchor="middle">04-24</text>
+<text class="axis-label" x="453.60" y="375" text-anchor="middle">04-25</text>
+<text class="axis-label" x="799.20" y="375" text-anchor="middle">04-29</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="2W">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 2周 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-92.0</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">146</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">383</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">621</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">858</text>
+            <line class="zero-line" x1="108" y1="312.19" x2="972" y2="312.19"></line>
+            <path class="trend-area" d="M 108.00 312.19 L 108.00 200.54 L 194.40 140.58 L 280.80 103.77 L 367.20 94.47 L 453.60 96.75 L 540.00 78.01 L 626.40 71.76 L 712.80 63.81 L 799.20 87.67 L 885.60 107.61 L 972.00 106.65 L 972.00 312.19 Z"></path>
+            <path class="trend-line" d="M 108.00 200.54 L 194.40 140.58 L 280.80 103.77 L 367.20 94.47 L 453.60 96.75 L 540.00 78.01 L 626.40 71.76 L 712.80 63.81 L 799.20 87.67 L 885.60 107.61 L 972.00 106.65"></path>
+            <circle class="trend-point" cx="972.00" cy="106.65" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">04-16</text>
+<text class="axis-label" x="280.80" y="375" text-anchor="middle">04-18</text>
+<text class="axis-label" x="540.00" y="375" text-anchor="middle">04-23</text>
+<text class="axis-label" x="799.20" y="375" text-anchor="middle">04-28</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1M">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 1月 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-425</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">673</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">1,770</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">2,867</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">3,965</text>
+            <line class="zero-line" x1="108" y1="312.19" x2="972" y2="312.19"></line>
+            <path class="trend-area" d="M 108.00 312.19 L 108.00 305.69 L 149.14 300.52 L 190.29 293.87 L 231.43 284.33 L 272.57 237.38 L 313.71 159.25 L 354.86 133.00 L 396.00 125.66 L 437.14 124.45 L 478.29 127.37 L 519.43 117.59 L 560.57 93.41 L 601.71 80.43 L 642.86 72.46 L 684.00 70.45 L 725.14 70.94 L 766.29 66.88 L 807.43 65.53 L 848.57 63.81 L 889.71 68.97 L 930.86 73.29 L 972.00 73.08 L 972.00 312.19 Z"></path>
+            <path class="trend-line" d="M 108.00 305.69 L 149.14 300.52 L 190.29 293.87 L 231.43 284.33 L 272.57 237.38 L 313.71 159.25 L 354.86 133.00 L 396.00 125.66 L 437.14 124.45 L 478.29 127.37 L 519.43 117.59 L 560.57 93.41 L 601.71 80.43 L 642.86 72.46 L 684.00 70.45 L 725.14 70.94 L 766.29 66.88 L 807.43 65.53 L 848.57 63.81 L 889.71 68.97 L 930.86 73.29 L 972.00 73.08"></path>
+            <circle class="trend-point" cx="972.00" cy="73.08" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">03-31</text>
+<text class="axis-label" x="313.71" y="375" text-anchor="middle">04-08</text>
+<text class="axis-label" x="519.43" y="375" text-anchor="middle">04-15</text>
+<text class="axis-label" x="766.29" y="375" text-anchor="middle">04-23</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="3M">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 3月 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-1,863</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">-656</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">551</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">1,758</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">2,965</text>
+            <line class="zero-line" x1="108" y1="223.15" x2="972" y2="223.15"></line>
+            <path class="trend-area" d="M 108.00 223.15 L 108.00 226.22 L 122.64 227.79 L 137.29 229.55 L 151.93 241.91 L 166.58 251.22 L 181.22 254.72 L 195.86 258.94 L 210.51 259.66 L 225.15 270.31 L 239.80 268.93 L 254.44 274.57 L 269.08 283.07 L 283.73 288.66 L 298.37 297.49 L 313.02 300.20 L 327.66 303.82 L 342.31 303.50 L 356.95 295.52 L 371.59 292.42 L 386.24 295.70 L 400.88 298.12 L 415.53 300.28 L 430.17 305.04 L 444.81 310.52 L 459.46 306.07 L 474.10 304.24 L 488.75 300.40 L 503.39 294.62 L 518.03 298.46 L 532.68 308.33 L 547.32 310.43 L 561.97 312.19 L 576.61 308.82 L 591.25 304.09 L 605.90 300.06 L 620.54 293.85 L 635.19 291.55 L 649.83 289.66 L 664.47 283.76 L 679.12 279.05 L 693.76 273.00 L 708.41 264.33 L 723.05 221.63 L 737.69 150.59 L 752.34 126.72 L 766.98 120.05 L 781.63 118.95 L 796.27 121.61 L 810.92 112.71 L 825.56 90.73 L 840.20 78.92 L 854.85 71.67 L 869.49 69.84 L 884.14 70.29 L 898.78 66.60 L 913.42 65.37 L 928.07 63.81 L 942.71 68.50 L 957.36 72.43 L 972.00 72.24 L 972.00 223.15 Z"></path>
+            <path class="trend-line" d="M 108.00 226.22 L 122.64 227.79 L 137.29 229.55 L 151.93 241.91 L 166.58 251.22 L 181.22 254.72 L 195.86 258.94 L 210.51 259.66 L 225.15 270.31 L 239.80 268.93 L 254.44 274.57 L 269.08 283.07 L 283.73 288.66 L 298.37 297.49 L 313.02 300.20 L 327.66 303.82 L 342.31 303.50 L 356.95 295.52 L 371.59 292.42 L 386.24 295.70 L 400.88 298.12 L 415.53 300.28 L 430.17 305.04 L 444.81 310.52 L 459.46 306.07 L 474.10 304.24 L 488.75 300.40 L 503.39 294.62 L 518.03 298.46 L 532.68 308.33 L 547.32 310.43 L 561.97 312.19 L 576.61 308.82 L 591.25 304.09 L 605.90 300.06 L 620.54 293.85 L 635.19 291.55 L 649.83 289.66 L 664.47 283.76 L 679.12 279.05 L 693.76 273.00 L 708.41 264.33 L 723.05 221.63 L 737.69 150.59 L 752.34 126.72 L 766.98 120.05 L 781.63 118.95 L 796.27 121.61 L 810.92 112.71 L 825.56 90.73 L 840.20 78.92 L 854.85 71.67 L 869.49 69.84 L 884.14 70.29 L 898.78 66.60 L 913.42 65.37 L 928.07 63.81 L 942.71 68.50 L 957.36 72.43 L 972.00 72.24"></path>
+            <circle class="trend-point" cx="972.00" cy="72.24" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">02-05</text>
+<text class="axis-label" x="327.66" y="375" text-anchor="middle">02-26</text>
+<text class="axis-label" x="547.32" y="375" text-anchor="middle">03-19</text>
+<text class="axis-label" x="752.34" y="375" text-anchor="middle">04-09</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel is-active" data-period-panel="6M">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 6月 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-639</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">713</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">2,066</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">3,419</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">4,772</text>
+            <line class="zero-line" x1="108" y1="305.61" x2="972" y2="305.61"></line>
+            <path class="trend-area" d="M 108.00 305.61 L 108.00 303.26 L 115.08 306.06 L 122.16 302.91 L 129.25 301.22 L 136.33 297.63 L 143.41 298.31 L 150.49 295.37 L 157.57 298.05 L 164.66 310.97 L 171.74 312.19 L 178.82 309.16 L 185.90 306.38 L 192.98 296.06 L 200.07 293.07 L 207.15 288.46 L 214.23 290.29 L 221.31 292.21 L 228.39 285.55 L 235.48 280.07 L 242.56 276.28 L 249.64 271.74 L 256.72 273.82 L 263.80 267.85 L 270.89 265.50 L 277.97 265.03 L 285.05 266.96 L 292.13 263.64 L 299.21 255.53 L 306.30 254.64 L 313.38 244.62 L 320.46 237.56 L 327.54 235.84 L 334.62 238.36 L 341.70 237.29 L 348.79 228.35 L 355.87 229.79 L 362.95 229.20 L 370.03 232.36 L 377.11 230.32 L 384.20 226.58 L 391.28 229.70 L 398.36 229.72 L 405.44 228.87 L 412.52 228.60 L 419.61 226.30 L 426.69 216.71 L 433.77 207.55 L 440.85 200.77 L 447.93 201.65 L 455.02 199.45 L 462.10 199.62 L 469.18 200.10 L 476.26 194.66 L 483.34 192.50 L 490.43 200.00 L 497.51 199.66 L 504.59 202.64 L 511.67 203.68 L 518.75 210.85 L 525.84 213.33 L 532.92 211.01 L 540.00 205.96 L 547.08 205.97 L 554.16 208.70 L 561.25 210.10 L 568.33 211.67 L 575.41 222.70 L 582.49 231.00 L 589.57 234.13 L 596.66 237.90 L 603.74 238.54 L 610.82 248.03 L 617.90 246.81 L 624.98 251.84 L 632.07 259.42 L 639.15 264.41 L 646.23 272.29 L 653.31 274.70 L 660.39 277.93 L 667.48 277.65 L 674.56 270.53 L 681.64 267.76 L 688.72 270.69 L 695.80 272.85 L 702.89 274.78 L 709.97 279.02 L 717.05 283.91 L 724.13 279.94 L 731.21 278.31 L 738.30 274.88 L 745.38 269.72 L 752.46 273.15 L 759.54 281.95 L 766.62 283.83 L 773.70 285.40 L 780.79 282.40 L 787.87 278.18 L 794.95 274.58 L 802.03 269.04 L 809.11 266.98 L 816.20 265.31 L 823.28 260.03 L 830.36 255.84 L 837.44 250.44 L 844.52 242.70 L 851.61 204.61 L 858.69 141.23 L 865.77 119.94 L 872.85 113.98 L 879.93 113.00 L 887.02 115.37 L 894.10 107.44 L 901.18 87.82 L 908.26 77.29 L 915.34 70.83 L 922.43 69.19 L 929.51 69.59 L 936.59 66.30 L 943.67 65.20 L 950.75 63.81 L 957.84 68.00 L 964.92 71.50 L 972.00 71.33 L 972.00 305.61 Z"></path>
+            <path class="trend-line" d="M 108.00 303.26 L 115.08 306.06 L 122.16 302.91 L 129.25 301.22 L 136.33 297.63 L 143.41 298.31 L 150.49 295.37 L 157.57 298.05 L 164.66 310.97 L 171.74 312.19 L 178.82 309.16 L 185.90 306.38 L 192.98 296.06 L 200.07 293.07 L 207.15 288.46 L 214.23 290.29 L 221.31 292.21 L 228.39 285.55 L 235.48 280.07 L 242.56 276.28 L 249.64 271.74 L 256.72 273.82 L 263.80 267.85 L 270.89 265.50 L 277.97 265.03 L 285.05 266.96 L 292.13 263.64 L 299.21 255.53 L 306.30 254.64 L 313.38 244.62 L 320.46 237.56 L 327.54 235.84 L 334.62 238.36 L 341.70 237.29 L 348.79 228.35 L 355.87 229.79 L 362.95 229.20 L 370.03 232.36 L 377.11 230.32 L 384.20 226.58 L 391.28 229.70 L 398.36 229.72 L 405.44 228.87 L 412.52 228.60 L 419.61 226.30 L 426.69 216.71 L 433.77 207.55 L 440.85 200.77 L 447.93 201.65 L 455.02 199.45 L 462.10 199.62 L 469.18 200.10 L 476.26 194.66 L 483.34 192.50 L 490.43 200.00 L 497.51 199.66 L 504.59 202.64 L 511.67 203.68 L 518.75 210.85 L 525.84 213.33 L 532.92 211.01 L 540.00 205.96 L 547.08 205.97 L 554.16 208.70 L 561.25 210.10 L 568.33 211.67 L 575.41 222.70 L 582.49 231.00 L 589.57 234.13 L 596.66 237.90 L 603.74 238.54 L 610.82 248.03 L 617.90 246.81 L 624.98 251.84 L 632.07 259.42 L 639.15 264.41 L 646.23 272.29 L 653.31 274.70 L 660.39 277.93 L 667.48 277.65 L 674.56 270.53 L 681.64 267.76 L 688.72 270.69 L 695.80 272.85 L 702.89 274.78 L 709.97 279.02 L 717.05 283.91 L 724.13 279.94 L 731.21 278.31 L 738.30 274.88 L 745.38 269.72 L 752.46 273.15 L 759.54 281.95 L 766.62 283.83 L 773.70 285.40 L 780.79 282.40 L 787.87 278.18 L 794.95 274.58 L 802.03 269.04 L 809.11 266.98 L 816.20 265.31 L 823.28 260.03 L 830.36 255.84 L 837.44 250.44 L 844.52 242.70 L 851.61 204.61 L 858.69 141.23 L 865.77 119.94 L 872.85 113.98 L 879.93 113.00 L 887.02 115.37 L 894.10 107.44 L 901.18 87.82 L 908.26 77.29 L 915.34 70.83 L 922.43 69.19 L 929.51 69.59 L 936.59 66.30 L 943.67 65.20 L 950.75 63.81 L 957.84 68.00 L 964.92 71.50 L 972.00 71.33"></path>
+            <circle class="trend-point" cx="972.00" cy="71.33" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">10-30</text>
+<text class="axis-label" x="320.46" y="375" text-anchor="middle">12-11</text>
+<text class="axis-label" x="540.00" y="375" text-anchor="middle">01-24</text>
+<text class="axis-label" x="759.54" y="375" text-anchor="middle">03-18</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="YTD">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 今年来 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-1,505</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">-299</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">908</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">2,115</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">3,322</text>
+            <line class="zero-line" x1="108" y1="245.95" x2="972" y2="245.95"></line>
+            <path class="trend-area" d="M 108.00 245.95 L 108.00 235.19 L 119.22 224.93 L 130.44 217.33 L 141.66 218.31 L 152.88 215.85 L 164.10 216.03 L 175.32 216.58 L 186.55 210.48 L 197.77 208.06 L 208.99 216.47 L 220.21 216.09 L 231.43 219.42 L 242.65 220.59 L 253.87 228.62 L 265.09 231.41 L 276.31 228.81 L 287.53 223.14 L 298.75 223.15 L 309.97 226.22 L 321.19 227.79 L 332.42 229.55 L 343.64 241.91 L 354.86 251.22 L 366.08 254.72 L 377.30 258.94 L 388.52 259.66 L 399.74 270.31 L 410.96 268.93 L 422.18 274.57 L 433.40 283.07 L 444.62 288.66 L 455.84 297.49 L 467.06 300.20 L 478.29 303.82 L 489.51 303.50 L 500.73 295.52 L 511.95 292.42 L 523.17 295.70 L 534.39 298.12 L 545.61 300.28 L 556.83 305.04 L 568.05 310.52 L 579.27 306.07 L 590.49 304.24 L 601.71 300.40 L 612.94 294.62 L 624.16 298.46 L 635.38 308.33 L 646.60 310.43 L 657.82 312.19 L 669.04 308.82 L 680.26 304.09 L 691.48 300.06 L 702.70 293.85 L 713.92 291.55 L 725.14 289.66 L 736.36 283.76 L 747.58 279.05 L 758.81 273.00 L 770.03 264.33 L 781.25 221.63 L 792.47 150.59 L 803.69 126.72 L 814.91 120.05 L 826.13 118.95 L 837.35 121.61 L 848.57 112.71 L 859.79 90.73 L 871.01 78.92 L 882.23 71.67 L 893.45 69.84 L 904.68 70.29 L 915.90 66.60 L 927.12 65.37 L 938.34 63.81 L 949.56 68.50 L 960.78 72.43 L 972.00 72.24 L 972.00 245.95 Z"></path>
+            <path class="trend-line" d="M 108.00 235.19 L 119.22 224.93 L 130.44 217.33 L 141.66 218.31 L 152.88 215.85 L 164.10 216.03 L 175.32 216.58 L 186.55 210.48 L 197.77 208.06 L 208.99 216.47 L 220.21 216.09 L 231.43 219.42 L 242.65 220.59 L 253.87 228.62 L 265.09 231.41 L 276.31 228.81 L 287.53 223.14 L 298.75 223.15 L 309.97 226.22 L 321.19 227.79 L 332.42 229.55 L 343.64 241.91 L 354.86 251.22 L 366.08 254.72 L 377.30 258.94 L 388.52 259.66 L 399.74 270.31 L 410.96 268.93 L 422.18 274.57 L 433.40 283.07 L 444.62 288.66 L 455.84 297.49 L 467.06 300.20 L 478.29 303.82 L 489.51 303.50 L 500.73 295.52 L 511.95 292.42 L 523.17 295.70 L 534.39 298.12 L 545.61 300.28 L 556.83 305.04 L 568.05 310.52 L 579.27 306.07 L 590.49 304.24 L 601.71 300.40 L 612.94 294.62 L 624.16 298.46 L 635.38 308.33 L 646.60 310.43 L 657.82 312.19 L 669.04 308.82 L 680.26 304.09 L 691.48 300.06 L 702.70 293.85 L 713.92 291.55 L 725.14 289.66 L 736.36 283.76 L 747.58 279.05 L 758.81 273.00 L 770.03 264.33 L 781.25 221.63 L 792.47 150.59 L 803.69 126.72 L 814.91 120.05 L 826.13 118.95 L 837.35 121.61 L 848.57 112.71 L 859.79 90.73 L 871.01 78.92 L 882.23 71.67 L 893.45 69.84 L 904.68 70.29 L 915.90 66.60 L 927.12 65.37 L 938.34 63.81 L 949.56 68.50 L 960.78 72.43 L 972.00 72.24"></path>
+            <circle class="trend-point" cx="972.00" cy="72.24" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">01-02</text>
+<text class="axis-label" x="321.19" y="375" text-anchor="middle">02-06</text>
+<text class="axis-label" x="534.39" y="375" text-anchor="middle">03-05</text>
+<text class="axis-label" x="758.81" y="375" text-anchor="middle">04-02</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="12M">
+        <article class="chart-card trend-card">
+          <div class="section-title">
+            <div>
+              <h2>滚动 12月 净额</h2>
+              <p class="section-caption">金额单位：亿元，负值代表资金净流出</p>
+            </div>
+          </div>
+          
+          <svg class="trend-svg" viewBox="0 0 1000 390" role="img" aria-label="ETF 净流入趋势图">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
+                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+              </linearGradient>
+            </defs>
+            <rect class="chart-bg" x="108" y="34" width="864" height="308" rx="4"></rect>
+            <line class="grid-line" x1="108" y1="342.00" x2="972" y2="342.00"></line><text class="axis-label y-label" x="92" y="346.00" text-anchor="end">-1,623</text>
+<line class="grid-line" x1="108" y1="265.00" x2="972" y2="265.00"></line><text class="axis-label y-label" x="92" y="269.00" text-anchor="end">1,488</text>
+<line class="grid-line" x1="108" y1="188.00" x2="972" y2="188.00"></line><text class="axis-label y-label" x="92" y="192.00" text-anchor="end">4,599</text>
+<line class="grid-line" x1="108" y1="111.00" x2="972" y2="111.00"></line><text class="axis-label y-label" x="92" y="115.00" text-anchor="end">7,710</text>
+<line class="grid-line" x1="108" y1="34.00" x2="972" y2="34.00"></line><text class="axis-label y-label" x="92" y="38.00" text-anchor="end">10,820</text>
+            <line class="zero-line" x1="108" y1="301.83" x2="972" y2="301.83"></line>
+            <path class="trend-area" d="M 108.00 301.83 L 108.00 301.43 L 111.57 302.50 L 115.14 303.46 L 118.71 304.55 L 122.28 304.51 L 125.85 306.21 L 129.42 307.29 L 132.99 308.41 L 136.56 309.10 L 140.13 310.43 L 143.70 309.17 L 147.27 309.60 L 150.84 311.04 L 154.41 312.19 L 157.98 311.99 L 161.55 309.46 L 165.12 309.19 L 168.69 308.87 L 172.26 308.04 L 175.83 307.72 L 179.40 306.61 L 182.98 307.30 L 186.55 306.93 L 190.12 306.24 L 193.69 304.53 L 197.26 302.83 L 200.83 300.89 L 204.40 299.66 L 207.97 299.06 L 211.54 298.02 L 215.11 297.46 L 218.68 296.79 L 222.25 296.89 L 225.82 297.40 L 229.39 294.83 L 232.96 290.87 L 236.53 288.15 L 240.10 287.24 L 243.67 286.18 L 247.24 283.88 L 250.81 284.24 L 254.38 284.42 L 257.95 282.39 L 261.52 279.29 L 265.09 276.23 L 268.66 274.22 L 272.23 271.90 L 275.80 271.34 L 279.37 271.50 L 282.94 271.98 L 286.51 271.41 L 290.08 269.30 L 293.65 263.49 L 297.22 258.98 L 300.79 251.02 L 304.36 247.91 L 307.93 245.72 L 311.50 243.49 L 315.07 239.77 L 318.64 236.35 L 322.21 235.10 L 325.79 232.38 L 329.36 229.83 L 332.93 229.89 L 336.50 227.86 L 340.07 224.12 L 343.64 221.78 L 347.21 221.19 L 350.78 219.87 L 354.35 220.51 L 357.92 220.27 L 361.49 219.88 L 365.06 220.10 L 368.63 217.64 L 372.20 214.99 L 375.77 214.84 L 379.34 213.59 L 382.91 211.86 L 386.48 209.57 L 390.05 207.78 L 393.62 205.69 L 397.19 203.85 L 400.76 200.81 L 404.33 198.75 L 407.90 198.66 L 411.47 199.86 L 415.04 198.96 L 418.61 199.11 L 422.18 197.30 L 425.75 196.86 L 429.32 194.98 L 432.89 194.28 L 436.46 193.56 L 440.03 193.36 L 443.60 193.67 L 447.17 192.78 L 450.74 191.82 L 454.31 213.14 L 457.88 211.56 L 461.45 208.09 L 465.02 209.24 L 468.60 205.95 L 472.17 205.67 L 475.74 189.59 L 479.31 172.63 L 482.88 154.56 L 486.45 149.11 L 490.02 149.84 L 493.59 151.07 L 497.16 153.49 L 500.73 151.78 L 504.30 155.53 L 507.87 152.26 L 511.44 155.23 L 515.01 159.71 L 518.58 163.54 L 522.15 165.41 L 525.72 165.42 L 529.29 166.50 L 532.86 168.95 L 536.43 167.93 L 540.00 169.15 L 543.57 167.78 L 547.14 167.05 L 550.71 165.48 L 554.28 165.78 L 557.85 164.50 L 561.42 165.67 L 564.99 171.29 L 568.56 171.82 L 572.13 170.50 L 575.70 169.29 L 579.27 164.80 L 582.84 163.50 L 586.41 161.50 L 589.98 162.29 L 593.55 163.13 L 597.12 160.23 L 600.69 157.85 L 604.26 156.20 L 607.83 154.23 L 611.40 155.13 L 614.98 152.54 L 618.55 151.51 L 622.12 151.31 L 625.69 152.15 L 629.26 150.71 L 632.83 147.18 L 636.40 146.79 L 639.97 142.43 L 643.54 139.36 L 647.11 138.62 L 650.68 139.71 L 654.25 139.24 L 657.82 135.36 L 661.39 135.99 L 664.96 135.73 L 668.53 137.10 L 672.10 136.22 L 675.67 134.59 L 679.24 135.95 L 682.81 135.95 L 686.38 135.58 L 689.95 135.47 L 693.52 134.47 L 697.09 130.30 L 700.66 126.31 L 704.23 123.37 L 707.80 123.75 L 711.37 122.79 L 714.94 122.86 L 718.51 123.08 L 722.08 120.71 L 725.65 119.77 L 729.22 123.03 L 732.79 122.88 L 736.36 124.18 L 739.93 124.63 L 743.50 127.75 L 747.07 128.83 L 750.64 127.82 L 754.21 125.62 L 757.79 125.62 L 761.36 126.82 L 764.93 127.42 L 768.50 128.11 L 772.07 132.90 L 775.64 136.51 L 779.21 137.87 L 782.78 139.51 L 786.35 139.79 L 789.92 143.92 L 793.49 143.39 L 797.06 145.57 L 800.63 148.87 L 804.20 151.04 L 807.77 154.46 L 811.34 155.52 L 814.91 156.92 L 818.48 156.80 L 822.05 153.70 L 825.62 152.50 L 829.19 153.77 L 832.76 154.71 L 836.33 155.55 L 839.90 157.39 L 843.47 159.52 L 847.04 157.79 L 850.61 157.08 L 854.18 155.59 L 857.75 153.35 L 861.32 154.84 L 864.89 158.67 L 868.46 159.48 L 872.03 160.17 L 875.60 158.86 L 879.17 157.03 L 882.74 155.46 L 886.31 153.05 L 889.88 152.16 L 893.45 151.43 L 897.02 149.14 L 900.60 147.31 L 904.17 144.96 L 907.74 141.60 L 911.31 125.04 L 914.88 97.47 L 918.45 88.22 L 922.02 85.63 L 925.59 85.20 L 929.16 86.23 L 932.73 82.78 L 936.30 74.25 L 939.87 69.67 L 943.44 66.86 L 947.01 66.15 L 950.58 66.32 L 954.15 64.89 L 957.72 64.41 L 961.29 63.81 L 964.86 65.63 L 968.43 67.15 L 972.00 67.08 L 972.00 301.83 Z"></path>
+            <path class="trend-line" d="M 108.00 301.43 L 111.57 302.50 L 115.14 303.46 L 118.71 304.55 L 122.28 304.51 L 125.85 306.21 L 129.42 307.29 L 132.99 308.41 L 136.56 309.10 L 140.13 310.43 L 143.70 309.17 L 147.27 309.60 L 150.84 311.04 L 154.41 312.19 L 157.98 311.99 L 161.55 309.46 L 165.12 309.19 L 168.69 308.87 L 172.26 308.04 L 175.83 307.72 L 179.40 306.61 L 182.98 307.30 L 186.55 306.93 L 190.12 306.24 L 193.69 304.53 L 197.26 302.83 L 200.83 300.89 L 204.40 299.66 L 207.97 299.06 L 211.54 298.02 L 215.11 297.46 L 218.68 296.79 L 222.25 296.89 L 225.82 297.40 L 229.39 294.83 L 232.96 290.87 L 236.53 288.15 L 240.10 287.24 L 243.67 286.18 L 247.24 283.88 L 250.81 284.24 L 254.38 284.42 L 257.95 282.39 L 261.52 279.29 L 265.09 276.23 L 268.66 274.22 L 272.23 271.90 L 275.80 271.34 L 279.37 271.50 L 282.94 271.98 L 286.51 271.41 L 290.08 269.30 L 293.65 263.49 L 297.22 258.98 L 300.79 251.02 L 304.36 247.91 L 307.93 245.72 L 311.50 243.49 L 315.07 239.77 L 318.64 236.35 L 322.21 235.10 L 325.79 232.38 L 329.36 229.83 L 332.93 229.89 L 336.50 227.86 L 340.07 224.12 L 343.64 221.78 L 347.21 221.19 L 350.78 219.87 L 354.35 220.51 L 357.92 220.27 L 361.49 219.88 L 365.06 220.10 L 368.63 217.64 L 372.20 214.99 L 375.77 214.84 L 379.34 213.59 L 382.91 211.86 L 386.48 209.57 L 390.05 207.78 L 393.62 205.69 L 397.19 203.85 L 400.76 200.81 L 404.33 198.75 L 407.90 198.66 L 411.47 199.86 L 415.04 198.96 L 418.61 199.11 L 422.18 197.30 L 425.75 196.86 L 429.32 194.98 L 432.89 194.28 L 436.46 193.56 L 440.03 193.36 L 443.60 193.67 L 447.17 192.78 L 450.74 191.82 L 454.31 213.14 L 457.88 211.56 L 461.45 208.09 L 465.02 209.24 L 468.60 205.95 L 472.17 205.67 L 475.74 189.59 L 479.31 172.63 L 482.88 154.56 L 486.45 149.11 L 490.02 149.84 L 493.59 151.07 L 497.16 153.49 L 500.73 151.78 L 504.30 155.53 L 507.87 152.26 L 511.44 155.23 L 515.01 159.71 L 518.58 163.54 L 522.15 165.41 L 525.72 165.42 L 529.29 166.50 L 532.86 168.95 L 536.43 167.93 L 540.00 169.15 L 543.57 167.78 L 547.14 167.05 L 550.71 165.48 L 554.28 165.78 L 557.85 164.50 L 561.42 165.67 L 564.99 171.29 L 568.56 171.82 L 572.13 170.50 L 575.70 169.29 L 579.27 164.80 L 582.84 163.50 L 586.41 161.50 L 589.98 162.29 L 593.55 163.13 L 597.12 160.23 L 600.69 157.85 L 604.26 156.20 L 607.83 154.23 L 611.40 155.13 L 614.98 152.54 L 618.55 151.51 L 622.12 151.31 L 625.69 152.15 L 629.26 150.71 L 632.83 147.18 L 636.40 146.79 L 639.97 142.43 L 643.54 139.36 L 647.11 138.62 L 650.68 139.71 L 654.25 139.24 L 657.82 135.36 L 661.39 135.99 L 664.96 135.73 L 668.53 137.10 L 672.10 136.22 L 675.67 134.59 L 679.24 135.95 L 682.81 135.95 L 686.38 135.58 L 689.95 135.47 L 693.52 134.47 L 697.09 130.30 L 700.66 126.31 L 704.23 123.37 L 707.80 123.75 L 711.37 122.79 L 714.94 122.86 L 718.51 123.08 L 722.08 120.71 L 725.65 119.77 L 729.22 123.03 L 732.79 122.88 L 736.36 124.18 L 739.93 124.63 L 743.50 127.75 L 747.07 128.83 L 750.64 127.82 L 754.21 125.62 L 757.79 125.62 L 761.36 126.82 L 764.93 127.42 L 768.50 128.11 L 772.07 132.90 L 775.64 136.51 L 779.21 137.87 L 782.78 139.51 L 786.35 139.79 L 789.92 143.92 L 793.49 143.39 L 797.06 145.57 L 800.63 148.87 L 804.20 151.04 L 807.77 154.46 L 811.34 155.52 L 814.91 156.92 L 818.48 156.80 L 822.05 153.70 L 825.62 152.50 L 829.19 153.77 L 832.76 154.71 L 836.33 155.55 L 839.90 157.39 L 843.47 159.52 L 847.04 157.79 L 850.61 157.08 L 854.18 155.59 L 857.75 153.35 L 861.32 154.84 L 864.89 158.67 L 868.46 159.48 L 872.03 160.17 L 875.60 158.86 L 879.17 157.03 L 882.74 155.46 L 886.31 153.05 L 889.88 152.16 L 893.45 151.43 L 897.02 149.14 L 900.60 147.31 L 904.17 144.96 L 907.74 141.60 L 911.31 125.04 L 914.88 97.47 L 918.45 88.22 L 922.02 85.63 L 925.59 85.20 L 929.16 86.23 L 932.73 82.78 L 936.30 74.25 L 939.87 69.67 L 943.44 66.86 L 947.01 66.15 L 950.58 66.32 L 954.15 64.89 L 957.72 64.41 L 961.29 63.81 L 964.86 65.63 L 968.43 67.15 L 972.00 67.08"></path>
+            <circle class="trend-point" cx="972.00" cy="67.08" r="5"></circle>
+            <text class="axis-label" x="108.00" y="375" text-anchor="middle">04-30</text>
+<text class="axis-label" x="322.21" y="375" text-anchor="middle">07-29</text>
+<text class="axis-label" x="540.00" y="375" text-anchor="middle">10-31</text>
+<text class="axis-label" x="757.79" y="375" text-anchor="middle">01-27</text>
+<text class="axis-label" x="972.00" y="375" text-anchor="middle">04-30</text>
+          </svg>
+
+          <div class="chart-footnote">金额 = 逐日份额变动 × 资金流价格累计；切换到“轮动”查看分类去向。</div>
+        </article>
+      </div>
+</div>
+        
+        <aside class="trend-summary-card" aria-label="区间流入流出静态展示">
+          <h2>区间流向</h2>
+          <p class="section-caption">单位：亿元</p>
+          <div class="trend-summary-list"><div class="trend-summary-row"><span class="trend-summary-label">最近1日</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+2.97</strong></div><div class="trend-summary-row"><span class="trend-summary-label">1周</span><span class="trend-summary-direction flow-negative">净流出</span><strong class="trend-summary-value flow-negative">-30.55</strong></div><div class="trend-summary-row"><span class="trend-summary-label">2周</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+634.3</strong></div><div class="trend-summary-row"><span class="trend-summary-label">1月</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+3,408</strong></div><div class="trend-summary-row"><span class="trend-summary-label">3月</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+2,365</strong></div><div class="trend-summary-row"><span class="trend-summary-label">6月</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+4,116</strong></div><div class="trend-summary-row"><span class="trend-summary-label">今年来</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+2,722</strong></div><div class="trend-summary-row"><span class="trend-summary-label">12月</span><span class="trend-summary-direction flow-positive">净流入</span><strong class="trend-summary-value flow-positive">+9,484</strong></div></div>
+        </aside>
+
+      </div>
+      <section class="notes-section">
+        <h2>口径说明</h2>
+        <ul><li>金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。</li>
+<li>成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。</li>
+<li>方向口径：最近1日、1周、2周、1月、3月与前一等长交易日区间比较，显示流出转流入、流入转流出、净流入/净流出扩大或缩小；6月、今年来、12月不做增量比较，只显示该区间全量净流入或净流出。</li></ul>
+      </section>
+    </section>
+
+    <section class="view-panel" data-view-panel="rotation">
+      
+      <div class="period-panel" data-period-panel="1D">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">最近1日 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-60.98</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+63.95</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+2.97</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">债券</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">宽基</span><span class="rotation-value">-41.04</span><span class="rotation-track"><span class="rotation-bar" style="width: 76.39%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">商品</span><span class="rotation-value">-8.50</span><span class="rotation-track"><span class="rotation-bar" style="width: 15.82%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">货币</span><span class="rotation-value">-3.68</span><span class="rotation-track"><span class="rotation-bar" style="width: 6.85%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">科技</span><span class="rotation-value">-2.98</span><span class="rotation-track"><span class="rotation-bar" style="width: 5.55%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">医药</span><span class="rotation-value">-2.48</span><span class="rotation-track"><span class="rotation-bar" style="width: 4.62%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">消费</span><span class="rotation-value">-1.77</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.29%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-0.21</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">周期</span><span class="rotation-value">-0.18</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+53.72</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">红利策略</span><span class="rotation-value">+3.12</span><span class="rotation-track"><span class="rotation-bar" style="width: 5.81%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">国防军工</span><span class="rotation-value">+2.90</span><span class="rotation-track"><span class="rotation-bar" style="width: 5.40%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+2.13</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.97%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+1.29</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.40%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">公用事业</span><span class="rotation-value">+0.78</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 51%。</li><li><span>2</span>债券承接最明显，区间估算净额为 +53.72 亿元。</li><li><span>3</span>防御资产吸收主要资金，短期风险偏好偏谨慎。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1W">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">1周 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-222.0</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+191.4</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-negative">-30.55</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">债券</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">宽基</span><span class="rotation-value">-134.5</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">货币</span><span class="rotation-value">-33.79</span><span class="rotation-track"><span class="rotation-bar" style="width: 25.12%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">红利策略</span><span class="rotation-value">-17.88</span><span class="rotation-track"><span class="rotation-bar" style="width: 13.29%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">消费</span><span class="rotation-value">-16.92</span><span class="rotation-track"><span class="rotation-bar" style="width: 12.58%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">金融</span><span class="rotation-value">-10.38</span><span class="rotation-track"><span class="rotation-bar" style="width: 7.72%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-4.28</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.18%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">港股</span><span class="rotation-value">-2.43</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">公用事业</span><span class="rotation-value">-1.74</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+72.34</span><span class="rotation-track"><span class="rotation-bar" style="width: 53.78%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+65.65</span><span class="rotation-track"><span class="rotation-bar" style="width: 48.80%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+30.28</span><span class="rotation-track"><span class="rotation-bar" style="width: 22.51%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+11.22</span><span class="rotation-track"><span class="rotation-bar" style="width: 8.34%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">国防军工</span><span class="rotation-value">+6.79</span><span class="rotation-track"><span class="rotation-bar" style="width: 5.05%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">医药</span><span class="rotation-value">+4.38</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.26%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">周期</span><span class="rotation-value">+0.77</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流出侧合计占分类资金轮动约 54%。</li><li><span>2</span>债券承接最明显，区间估算净额为 +72.34 亿元。</li><li><span>3</span>防御资产吸收主要资金，短期风险偏好偏谨慎。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="2W">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">2周 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-92.45</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+726.8</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+634.3</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">商品</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">红利策略</span><span class="rotation-value">-34.35</span><span class="rotation-track"><span class="rotation-bar" style="width: 16.05%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">消费</span><span class="rotation-value">-24.74</span><span class="rotation-track"><span class="rotation-bar" style="width: 11.56%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">金融</span><span class="rotation-value">-24.57</span><span class="rotation-track"><span class="rotation-bar" style="width: 11.48%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-6.10</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.85%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">公用事业</span><span class="rotation-value">-2.31</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">国防军工</span><span class="rotation-value">-0.35</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-0.04</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+214.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">宽基</span><span class="rotation-value">+210.1</span><span class="rotation-track"><span class="rotation-bar" style="width: 98.15%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+124.7</span><span class="rotation-track"><span class="rotation-bar" style="width: 58.28%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">货币</span><span class="rotation-value">+87.06</span><span class="rotation-track"><span class="rotation-bar" style="width: 40.67%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+40.82</span><span class="rotation-track"><span class="rotation-bar" style="width: 19.07%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+24.44</span><span class="rotation-track"><span class="rotation-bar" style="width: 11.42%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+18.62</span><span class="rotation-track"><span class="rotation-bar" style="width: 8.70%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">医药</span><span class="rotation-value">+6.73</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.15%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 89%。</li><li><span>2</span>商品承接最明显，区间估算净额为 +214.0 亿元。</li><li><span>3</span>区间全市场 ETF 估算净额为 +634.3 亿元。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1M">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">1月 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-52.33</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+3,460</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+3,408</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">宽基</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">金融</span><span class="rotation-value">-38.14</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.05%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-7.07</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">周期</span><span class="rotation-value">-6.27</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">消费</span><span class="rotation-value">-0.62</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">公用事业</span><span class="rotation-value">-0.15</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-0.07</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">宽基</span><span class="rotation-value">+1,858</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+509.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 27.40%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+357.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 19.23%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+298.7</span><span class="rotation-track"><span class="rotation-bar" style="width: 16.08%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">货币</span><span class="rotation-value">+225.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 12.11%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+74.21</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.99%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+71.81</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.87%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">国防军工</span><span class="rotation-value">+39.44</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.12%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 99%。</li><li><span>2</span>宽基承接最明显，区间估算净额为 +1,858 亿元。</li><li><span>3</span>宽基承接增强，指数型资金可能是主要增量来源。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="3M">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">3月 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-193.9</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+2,559</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+2,365</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">商品</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">宽基</span><span class="rotation-value">-192.6</span><span class="rotation-track"><span class="rotation-bar" style="width: 28.22%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-1.26</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+682.6</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+629.4</span><span class="rotation-track"><span class="rotation-bar" style="width: 92.20%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+308.4</span><span class="rotation-track"><span class="rotation-bar" style="width: 45.18%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+304.3</span><span class="rotation-track"><span class="rotation-bar" style="width: 44.58%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">货币</span><span class="rotation-value">+211.6</span><span class="rotation-track"><span class="rotation-bar" style="width: 31.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+110.7</span><span class="rotation-track"><span class="rotation-bar" style="width: 16.21%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">金融</span><span class="rotation-value">+89.98</span><span class="rotation-track"><span class="rotation-bar" style="width: 13.18%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">国防军工</span><span class="rotation-value">+61.05</span><span class="rotation-track"><span class="rotation-bar" style="width: 8.94%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 93%。</li><li><span>2</span>商品承接最明显，区间估算净额为 +682.6 亿元。</li><li><span>3</span>区间全市场 ETF 估算净额为 +2,365 亿元。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel is-active" data-period-panel="6M">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">6月 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-18.81</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+4,135</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+4,116</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">港股</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-14.57</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-4.24</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+869.8</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">宽基</span><span class="rotation-value">+710.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 81.65%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+703.6</span><span class="rotation-track"><span class="rotation-bar" style="width: 80.90%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+636.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 73.15%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+305.4</span><span class="rotation-track"><span class="rotation-bar" style="width: 35.11%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+263.3</span><span class="rotation-track"><span class="rotation-bar" style="width: 30.27%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">红利策略</span><span class="rotation-value">+245.4</span><span class="rotation-track"><span class="rotation-bar" style="width: 28.21%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">货币</span><span class="rotation-value">+127.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 14.60%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 100%。</li><li><span>2</span>港股承接最明显，区间估算净额为 +869.8 亿元。</li><li><span>3</span>区间全市场 ETF 估算净额为 +4,116 亿元。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="YTD">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">今年来 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-1.72</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+2,724</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+2,722</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">商品</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-1.72</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+646.7</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+597.8</span><span class="rotation-track"><span class="rotation-bar" style="width: 92.43%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+352.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 54.42%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+338.5</span><span class="rotation-track"><span class="rotation-bar" style="width: 52.34%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">宽基</span><span class="rotation-value">+155.1</span><span class="rotation-track"><span class="rotation-bar" style="width: 23.99%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+140.4</span><span class="rotation-track"><span class="rotation-bar" style="width: 21.71%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">货币</span><span class="rotation-value">+140.3</span><span class="rotation-track"><span class="rotation-bar" style="width: 21.69%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">红利策略</span><span class="rotation-value">+85.28</span><span class="rotation-track"><span class="rotation-bar" style="width: 13.19%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 100%。</li><li><span>2</span>商品承接最明显，区间估算净额为 +646.7 亿元。</li><li><span>3</span>区间全市场 ETF 估算净额为 +2,722 亿元。</li></ol>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="12M">
+        <article class="chart-card">
+          <div class="rotation-header">
+            <div>
+              <h2>ETF 资金轮动（单位：亿元）</h2>
+              <p class="section-caption">12月 分类净额，未映射品种归入“其他”</p>
+            </div>
+            <div class="rotation-stats">
+              <div class="compact-stat"><span>流出合计</span><strong class="flow-negative">-313.4</strong></div>
+              <div class="compact-stat"><span>流入合计</span><strong class="flow-positive">+9,797</strong></div>
+              <div class="compact-stat"><span>净流入</span><strong class="flow-positive">+9,484</strong></div>
+              <div class="compact-stat"><span>最大去向</span><strong class="flow-positive">宽基</strong></div>
+            </div>
+          </div>
+          
+          <div class="rotation-grid">
+            <div class="rotation-side rotation-side-left">
+              <div class="rotation-row negative"><span class="rotation-label">货币</span><span class="rotation-value">-163.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.92%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">新能源</span><span class="rotation-value">-92.05</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">金融</span><span class="rotation-value">-57.02</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+<div class="rotation-row negative"><span class="rotation-label">指数增强</span><span class="rotation-value">-1.09</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.00%"></span></span></div>
+            </div>
+            <div class="rotation-axis"></div>
+            <div class="rotation-side rotation-side-right">
+              <div class="rotation-row positive"><span class="rotation-label">宽基</span><span class="rotation-value">+5,598</span><span class="rotation-track"><span class="rotation-bar" style="width: 100.00%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">债券</span><span class="rotation-value">+1,070</span><span class="rotation-track"><span class="rotation-bar" style="width: 19.11%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">港股</span><span class="rotation-value">+976.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 17.44%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">商品</span><span class="rotation-value">+871.7</span><span class="rotation-track"><span class="rotation-bar" style="width: 15.57%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">科技</span><span class="rotation-value">+381.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 6.81%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">海外</span><span class="rotation-value">+344.5</span><span class="rotation-track"><span class="rotation-bar" style="width: 6.15%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">红利策略</span><span class="rotation-value">+190.2</span><span class="rotation-track"><span class="rotation-bar" style="width: 3.40%"></span></span></div>
+<div class="rotation-row positive"><span class="rotation-label">医药</span><span class="rotation-value">+122.0</span><span class="rotation-track"><span class="rotation-bar" style="width: 2.18%"></span></span></div>
+            </div>
+          </div>
+
+        </article>
+        <section class="insight-card">
+          <h2>解读</h2>
+          <ol class="insight-list"><li><span>1</span>主要流入侧合计占分类资金轮动约 97%。</li><li><span>2</span>宽基承接最明显，区间估算净额为 +5,598 亿元。</li><li><span>3</span>宽基承接增强，指数型资金可能是主要增量来源。</li></ol>
+        </section>
+      </div>
+
+    </section>
+
+    <section class="view-panel detail-view" data-view-panel="detail">
+      
+      <div class="period-panel" data-period-panel="1D">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>最近1日 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>511360.SH</td><td>海富通中证短融ETF</td><td class="category-cell">债券 / 短融</td><td>+0.03%</td><td>136.0</td><td class="flow-positive">+44.60</td></tr><tr><td class="rank-cell">2</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>-0.48%</td><td>15.03</td><td class="flow-positive">+7.25</td></tr><tr><td class="rank-cell">3</td><td>511520.SH</td><td>富国中债7-10年政策性金融债ETF</td><td class="category-cell">债券 / 政金债</td><td>+0.11%</td><td>44.29</td><td class="flow-positive">+5.34</td></tr><tr><td class="rank-cell">4</td><td>159830.SZ</td><td>天弘上海金ETF</td><td class="category-cell">商品 / 黄金</td><td>-0.61%</td><td>0.26</td><td class="flow-positive">+4.46</td></tr><tr><td class="rank-cell">5</td><td>511110.SH</td><td>易方达上证基准做市公司债ETF</td><td class="category-cell">债券 / 信用债</td><td>+0.06%</td><td>55.04</td><td class="flow-positive">+2.79</td></tr><tr><td class="rank-cell">6</td><td>512890.SH</td><td>华泰柏瑞中证红利低波动ETF</td><td class="category-cell">红利策略 / 红利价值</td><td>-1.60%</td><td>8.08</td><td class="flow-positive">+2.72</td></tr><tr><td class="rank-cell">7</td><td>159915.SZ</td><td>易方达创业板ETF</td><td class="category-cell">宽基 / 创业板</td><td>+0.95%</td><td>20.45</td><td class="flow-positive">+2.46</td></tr><tr><td class="rank-cell">8</td><td>589800.SH</td><td>易方达上证科创板综合ETF</td><td class="category-cell">宽基 / 其他</td><td>+1.19%</td><td>0.97</td><td class="flow-positive">+1.98</td></tr><tr><td class="rank-cell">9</td><td>510720.SH</td><td>国泰上证国有企业红利ETF</td><td class="category-cell">红利策略 / 红利价值</td><td>-1.59%</td><td>1.89</td><td class="flow-positive">+1.36</td></tr><tr><td class="rank-cell">10</td><td>588790.SH</td><td>博时上证科创板人工智能ETF</td><td class="category-cell">科技 / 人工智能</td><td>+4.02%</td><td>4.12</td><td class="flow-positive">+1.34</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>512100.SH</td><td>南方中证1000ETF</td><td class="category-cell">宽基 / 中证1000</td><td>+0.76%</td><td>14.50</td><td class="flow-negative">-6.38</td></tr><tr><td class="rank-cell">2</td><td>510500.SH</td><td>南方中证500ETF</td><td class="category-cell">宽基 / 中证500</td><td>+0.50%</td><td>11.67</td><td class="flow-negative">-5.87</td></tr><tr><td class="rank-cell">3</td><td>518800.SH</td><td>国泰黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-0.63%</td><td>2.03</td><td class="flow-negative">-5.11</td></tr><tr><td class="rank-cell">4</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-0.61%</td><td>32.76</td><td class="flow-negative">-4.91</td></tr><tr><td class="rank-cell">5</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+0.85%</td><td>18.05</td><td class="flow-negative">-4.11</td></tr><tr><td class="rank-cell">6</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.21%</td><td>6.08</td><td class="flow-negative">-3.24</td></tr><tr><td class="rank-cell">7</td><td>512010.SH</td><td>易方达沪深300医药卫生ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+1.14%</td><td>5.84</td><td class="flow-negative">-2.82</td></tr><tr><td class="rank-cell">8</td><td>511180.SH</td><td>海富通上证投资级可转债及可交换债券ETF</td><td class="category-cell">债券 / 可转债</td><td>-0.06%</td><td>6.63</td><td class="flow-negative">-2.30</td></tr><tr><td class="rank-cell">9</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-0.08%</td><td>19.37</td><td class="flow-negative">-2.09</td></tr><tr><td class="rank-cell">10</td><td>511990.SH</td><td>华宝现金添益货币ETF-A</td><td class="category-cell">货币</td><td>+0.02%</td><td>122.3</td><td class="flow-negative">-2.08</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1W">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>1周 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>511360.SH</td><td>海富通中证短融ETF</td><td class="category-cell">债券 / 短融</td><td>+0.07%</td><td>490.0</td><td class="flow-positive">+50.62</td></tr><tr><td class="rank-cell">2</td><td>159934.SZ</td><td>易方达黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-6.59%</td><td>138.4</td><td class="flow-positive">+26.22</td></tr><tr><td class="rank-cell">3</td><td>159937.SZ</td><td>博时黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-6.40%</td><td>72.57</td><td class="flow-positive">+23.46</td></tr><tr><td class="rank-cell">4</td><td>589800.SH</td><td>易方达上证科创板综合ETF</td><td class="category-cell">宽基 / 其他</td><td>+0.22%</td><td>7.32</td><td class="flow-positive">+13.15</td></tr><tr><td class="rank-cell">5</td><td>589000.SH</td><td>华夏上证科创板综合ETF</td><td class="category-cell">宽基 / 其他</td><td>+0.43%</td><td>12.64</td><td class="flow-positive">+12.77</td></tr><tr><td class="rank-cell">6</td><td>518800.SH</td><td>国泰黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-6.45%</td><td>34.47</td><td class="flow-positive">+11.61</td></tr><tr><td class="rank-cell">7</td><td>511520.SH</td><td>富国中债7-10年政策性金融债ETF</td><td class="category-cell">债券 / 政金债</td><td>+0.28%</td><td>391.6</td><td class="flow-positive">+10.82</td></tr><tr><td class="rank-cell">8</td><td>513980.SH</td><td>景顺长城中证港股通科技ETF</td><td class="category-cell">港股 / 港股科技</td><td>+3.94%</td><td>64.23</td><td class="flow-positive">+9.24</td></tr><tr><td class="rank-cell">9</td><td>159792.SZ</td><td>富国中证港股通互联网ETF</td><td class="category-cell">港股 / 港股科技</td><td>+5.46%</td><td>151.4</td><td class="flow-positive">+8.27</td></tr><tr><td class="rank-cell">10</td><td>562500.SH</td><td>华夏中证机器人ETF</td><td class="category-cell">科技 / 机器人</td><td>+5.80%</td><td>54.78</td><td class="flow-positive">+7.94</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>511880.SH</td><td>银华货币ETF-A</td><td class="category-cell">货币</td><td>+0.04%</td><td>714.2</td><td class="flow-negative">-34.24</td></tr><tr><td class="rank-cell">2</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-0.31%</td><td>128.0</td><td class="flow-negative">-25.78</td></tr><tr><td class="rank-cell">3</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>-6.40%</td><td>511.3</td><td class="flow-negative">-22.17</td></tr><tr><td class="rank-cell">4</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-0.00%</td><td>39.30</td><td class="flow-negative">-20.12</td></tr><tr><td class="rank-cell">5</td><td>513060.SH</td><td>博时恒生医疗保健ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+2.96%</td><td>94.87</td><td class="flow-negative">-17.80</td></tr><tr><td class="rank-cell">6</td><td>513120.SH</td><td>广发中证香港创新药ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+1.86%</td><td>196.1</td><td class="flow-negative">-17.39</td></tr><tr><td class="rank-cell">7</td><td>159352.SZ</td><td>南方中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.00%</td><td>162.3</td><td class="flow-negative">-15.89</td></tr><tr><td class="rank-cell">8</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>-0.85%</td><td>87.14</td><td class="flow-negative">-15.57</td></tr><tr><td class="rank-cell">9</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-0.35%</td><td>37.29</td><td class="flow-negative">-9.28</td></tr><tr><td class="rank-cell">10</td><td>159928.SZ</td><td>汇添富中证主要消费ETF</td><td class="category-cell">消费 / 消费综合</td><td>-1.45%</td><td>19.88</td><td class="flow-negative">-7.08</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="2W">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>2周 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+0.39%</td><td>138.0</td><td class="flow-positive">+86.61</td></tr><tr><td class="rank-cell">2</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+0.39%</td><td>375.4</td><td class="flow-positive">+67.73</td></tr><tr><td class="rank-cell">3</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+0.41%</td><td>152.1</td><td class="flow-positive">+66.81</td></tr><tr><td class="rank-cell">4</td><td>511360.SH</td><td>海富通中证短融ETF</td><td class="category-cell">债券 / 短融</td><td>+0.09%</td><td>816.4</td><td class="flow-positive">+64.82</td></tr><tr><td class="rank-cell">5</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+0.46%</td><td>99.41</td><td class="flow-positive">+60.47</td></tr><tr><td class="rank-cell">6</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>+0.07%</td><td>250.5</td><td class="flow-positive">+59.41</td></tr><tr><td class="rank-cell">7</td><td>511990.SH</td><td>华宝现金添益货币ETF-A</td><td class="category-cell">货币</td><td>+0.01%</td><td>1,088</td><td class="flow-positive">+56.14</td></tr><tr><td class="rank-cell">8</td><td>159934.SZ</td><td>易方达黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+1.99%</td><td>243.1</td><td class="flow-positive">+47.80</td></tr><tr><td class="rank-cell">9</td><td>159937.SZ</td><td>博时黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+1.98%</td><td>154.5</td><td class="flow-positive">+40.20</td></tr><tr><td class="rank-cell">10</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+1.99%</td><td>858.6</td><td class="flow-positive">+37.38</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.72%</td><td>62.17</td><td class="flow-negative">-27.22</td></tr><tr><td class="rank-cell">2</td><td>159352.SZ</td><td>南方中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.73%</td><td>302.1</td><td class="flow-negative">-22.08</td></tr><tr><td class="rank-cell">3</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+0.76%</td><td>219.0</td><td class="flow-negative">-21.68</td></tr><tr><td class="rank-cell">4</td><td>513060.SH</td><td>博时恒生医疗保健ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+6.10%</td><td>149.2</td><td class="flow-negative">-20.95</td></tr><tr><td class="rank-cell">5</td><td>563220.SH</td><td>富国中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.74%</td><td>104.2</td><td class="flow-negative">-17.18</td></tr><tr><td class="rank-cell">6</td><td>513120.SH</td><td>广发中证香港创新药ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+6.14%</td><td>297.2</td><td class="flow-negative">-16.38</td></tr><tr><td class="rank-cell">7</td><td>159338.SZ</td><td>国泰中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.66%</td><td>243.8</td><td class="flow-negative">-13.04</td></tr><tr><td class="rank-cell">8</td><td>512880.SH</td><td>国泰中证全指证券公司ETF</td><td class="category-cell">金融 / 证券</td><td>+0.68%</td><td>96.52</td><td class="flow-negative">-11.97</td></tr><tr><td class="rank-cell">9</td><td>159351.SZ</td><td>嘉实中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.64%</td><td>256.5</td><td class="flow-negative">-11.05</td></tr><tr><td class="rank-cell">10</td><td>563800.SH</td><td>广发中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>+0.66%</td><td>190.3</td><td class="flow-negative">-9.33</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="1M">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>1月 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.54%</td><td>1,190</td><td class="flow-positive">+429.8</td></tr><tr><td class="rank-cell">2</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.62%</td><td>469.3</td><td class="flow-positive">+344.7</td></tr><tr><td class="rank-cell">3</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.61%</td><td>527.1</td><td class="flow-positive">+308.1</td></tr><tr><td class="rank-cell">4</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.58%</td><td>347.8</td><td class="flow-positive">+216.4</td></tr><tr><td class="rank-cell">5</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>-1.64%</td><td>634.8</td><td class="flow-positive">+180.3</td></tr><tr><td class="rank-cell">6</td><td>510500.SH</td><td>南方中证500ETF</td><td class="category-cell">宽基 / 中证500</td><td>-4.79%</td><td>460.2</td><td class="flow-positive">+170.4</td></tr><tr><td class="rank-cell">7</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+7.68%</td><td>1,449</td><td class="flow-positive">+162.9</td></tr><tr><td class="rank-cell">8</td><td>512100.SH</td><td>南方中证1000ETF</td><td class="category-cell">宽基 / 中证1000</td><td>-5.03%</td><td>493.0</td><td class="flow-positive">+130.9</td></tr><tr><td class="rank-cell">9</td><td>511360.SH</td><td>海富通中证短融ETF</td><td class="category-cell">债券 / 短融</td><td>+0.22%</td><td>1,575</td><td class="flow-positive">+123.3</td></tr><tr><td class="rank-cell">10</td><td>511990.SH</td><td>华宝现金添益货币ETF-A</td><td class="category-cell">货币</td><td>+0.01%</td><td>2,148</td><td class="flow-positive">+119.0</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-4.04%</td><td>148.6</td><td class="flow-negative">-43.03</td></tr><tr><td class="rank-cell">2</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>-1.76%</td><td>678.5</td><td class="flow-negative">-38.79</td></tr><tr><td class="rank-cell">3</td><td>513060.SH</td><td>博时恒生医疗保健ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+2.53%</td><td>422.7</td><td class="flow-negative">-31.23</td></tr><tr><td class="rank-cell">4</td><td>512050.SH</td><td>华夏中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-4.09%</td><td>645.0</td><td class="flow-negative">-23.04</td></tr><tr><td class="rank-cell">5</td><td>511380.SH</td><td>博时中证可转债及可交换债券ETF</td><td class="category-cell">债券 / 可转债</td><td>-1.68%</td><td>1,039</td><td class="flow-negative">-21.44</td></tr><tr><td class="rank-cell">6</td><td>159352.SZ</td><td>南方中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-4.16%</td><td>616.4</td><td class="flow-negative">-19.26</td></tr><tr><td class="rank-cell">7</td><td>159393.SZ</td><td>万家沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.70%</td><td>11.18</td><td class="flow-negative">-14.82</td></tr><tr><td class="rank-cell">8</td><td>563880.SH</td><td>汇添富中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-4.04%</td><td>118.7</td><td class="flow-negative">-14.31</td></tr><tr><td class="rank-cell">9</td><td>511090.SH</td><td>鹏扬中债-30年期国债ETF</td><td class="category-cell">债券 / 国债</td><td>+4.28%</td><td>2,147</td><td class="flow-negative">-13.73</td></tr><tr><td class="rank-cell">10</td><td>512880.SH</td><td>国泰中证全指证券公司ETF</td><td class="category-cell">金融 / 证券</td><td>-6.68%</td><td>251.9</td><td class="flow-negative">-12.52</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="3M">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>3月 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-1.22%</td><td>704.3</td><td class="flow-positive">+293.0</td></tr><tr><td class="rank-cell">2</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+20.46%</td><td>2,143</td><td class="flow-positive">+225.5</td></tr><tr><td class="rank-cell">3</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-1.05%</td><td>2,878</td><td class="flow-positive">+220.8</td></tr><tr><td class="rank-cell">4</td><td>159792.SZ</td><td>富国中证港股通互联网ETF</td><td class="category-cell">港股 / 港股科技</td><td>+16.22%</td><td>1,950</td><td class="flow-positive">+208.0</td></tr><tr><td class="rank-cell">5</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-1.17%</td><td>1,075</td><td class="flow-positive">+183.3</td></tr><tr><td class="rank-cell">6</td><td>511880.SH</td><td>银华货币ETF-A</td><td class="category-cell">货币</td><td>+0.29%</td><td>6,752</td><td class="flow-positive">+154.8</td></tr><tr><td class="rank-cell">7</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>+1.89%</td><td>1,481</td><td class="flow-positive">+149.7</td></tr><tr><td class="rank-cell">8</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-1.06%</td><td>674.5</td><td class="flow-positive">+139.8</td></tr><tr><td class="rank-cell">9</td><td>159934.SZ</td><td>易方达黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+20.49%</td><td>564.2</td><td class="flow-positive">+118.2</td></tr><tr><td class="rank-cell">10</td><td>159636.SZ</td><td>工银瑞信国证港股通科技ETF</td><td class="category-cell">港股 / 港股科技</td><td>+17.50%</td><td>591.3</td><td class="flow-positive">+115.5</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+5.25%</td><td>2,444</td><td class="flow-negative">-184.3</td></tr><tr><td class="rank-cell">2</td><td>159338.SZ</td><td>国泰中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-1.08%</td><td>1,831</td><td class="flow-negative">-78.72</td></tr><tr><td class="rank-cell">3</td><td>511030.SH</td><td>平安中债-中高等级公司债利差因子ETF</td><td class="category-cell">债券 / 信用债</td><td>+0.24%</td><td>581.6</td><td class="flow-negative">-77.81</td></tr><tr><td class="rank-cell">4</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-1.02%</td><td>898.3</td><td class="flow-negative">-76.03</td></tr><tr><td class="rank-cell">5</td><td>513060.SH</td><td>博时恒生医疗保健ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+26.82%</td><td>1,158</td><td class="flow-negative">-74.38</td></tr><tr><td class="rank-cell">6</td><td>513330.SH</td><td>华夏恒生互联网科技业ETF(QDII)</td><td class="category-cell">港股 / 港股科技</td><td>+7.85%</td><td>2,937</td><td class="flow-negative">-66.31</td></tr><tr><td class="rank-cell">7</td><td>513050.SH</td><td>易方达中证海外中国互联网50ETF(QDII)</td><td class="category-cell">海外</td><td>+12.80%</td><td>2,494</td><td class="flow-negative">-61.08</td></tr><tr><td class="rank-cell">8</td><td>511380.SH</td><td>博时中证可转债及可交换债券ETF</td><td class="category-cell">债券 / 可转债</td><td>+0.59%</td><td>2,660</td><td class="flow-negative">-55.01</td></tr><tr><td class="rank-cell">9</td><td>159920.SZ</td><td>华夏恒生ETF(QDII)</td><td class="category-cell">港股 / 港股宽基</td><td>+9.94%</td><td>689.1</td><td class="flow-negative">-50.32</td></tr><tr><td class="rank-cell">10</td><td>563880.SH</td><td>汇添富中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-0.73%</td><td>421.3</td><td class="flow-negative">-39.81</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel is-active" data-period-panel="6M">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>6月 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.69%</td><td>1,120</td><td class="flow-positive">+335.5</td></tr><tr><td class="rank-cell">2</td><td>159792.SZ</td><td>富国中证港股通互联网ETF</td><td class="category-cell">港股 / 港股科技</td><td>+18.21%</td><td>2,570</td><td class="flow-positive">+258.2</td></tr><tr><td class="rank-cell">3</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+23.12%</td><td>3,279</td><td class="flow-positive">+235.1</td></tr><tr><td class="rank-cell">4</td><td>511520.SH</td><td>富国中债7-10年政策性金融债ETF</td><td class="category-cell">债券 / 政金债</td><td>+4.53%</td><td>6,951</td><td class="flow-positive">+178.7</td></tr><tr><td class="rank-cell">5</td><td>511360.SH</td><td>海富通中证短融ETF</td><td class="category-cell">债券 / 短融</td><td>+0.97%</td><td>14,888</td><td class="flow-positive">+164.7</td></tr><tr><td class="rank-cell">6</td><td>563800.SH</td><td>广发中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-5.17%</td><td>2,426</td><td class="flow-positive">+152.5</td></tr><tr><td class="rank-cell">7</td><td>159636.SZ</td><td>工银瑞信国证港股通科技ETF</td><td class="category-cell">港股 / 港股科技</td><td>+22.33%</td><td>737.4</td><td class="flow-positive">+151.8</td></tr><tr><td class="rank-cell">8</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.56%</td><td>1,422</td><td class="flow-positive">+144.0</td></tr><tr><td class="rank-cell">9</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.63%</td><td>2,126</td><td class="flow-positive">+141.1</td></tr><tr><td class="rank-cell">10</td><td>159352.SZ</td><td>南方中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-3.97%</td><td>3,340</td><td class="flow-positive">+137.9</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+3.31%</td><td>5,919</td><td class="flow-negative">-386.4</td></tr><tr><td class="rank-cell">2</td><td>159915.SZ</td><td>易方达创业板ETF</td><td class="category-cell">宽基 / 创业板</td><td>-10.02%</td><td>4,593</td><td class="flow-negative">-101.6</td></tr><tr><td class="rank-cell">3</td><td>513050.SH</td><td>易方达中证海外中国互联网50ETF(QDII)</td><td class="category-cell">海外</td><td>+8.89%</td><td>3,840</td><td class="flow-negative">-96.88</td></tr><tr><td class="rank-cell">4</td><td>511030.SH</td><td>平安中债-中高等级公司债利差因子ETF</td><td class="category-cell">债券 / 信用债</td><td>+1.20%</td><td>821.9</td><td class="flow-negative">-75.28</td></tr><tr><td class="rank-cell">5</td><td>512480.SH</td><td>国联安中证全指半导体产品与设备ETF</td><td class="category-cell">科技 / 半导体</td><td>+8.94%</td><td>1,971</td><td class="flow-negative">-74.77</td></tr><tr><td class="rank-cell">6</td><td>513330.SH</td><td>华夏恒生互联网科技业ETF(QDII)</td><td class="category-cell">港股 / 港股科技</td><td>+5.18%</td><td>4,787</td><td class="flow-negative">-71.42</td></tr><tr><td class="rank-cell">7</td><td>588200.SH</td><td>嘉实上证科创板芯片ETF</td><td class="category-cell">科技 / 半导体</td><td>+14.43%</td><td>3,537</td><td class="flow-negative">-66.93</td></tr><tr><td class="rank-cell">8</td><td>159995.SZ</td><td>华夏国证半导体芯片ETF</td><td class="category-cell">科技 / 半导体</td><td>+6.53%</td><td>1,117</td><td class="flow-negative">-63.98</td></tr><tr><td class="rank-cell">9</td><td>159920.SZ</td><td>华夏恒生ETF(QDII)</td><td class="category-cell">港股 / 港股宽基</td><td>+9.07%</td><td>1,326</td><td class="flow-negative">-56.52</td></tr><tr><td class="rank-cell">10</td><td>588080.SH</td><td>易方达上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+3.70%</td><td>1,513</td><td class="flow-negative">-55.45</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="YTD">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>今年来 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.90%</td><td>826.7</td><td class="flow-positive">+337.5</td></tr><tr><td class="rank-cell">2</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.88%</td><td>3,680</td><td class="flow-positive">+250.4</td></tr><tr><td class="rank-cell">3</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+26.03%</td><td>2,405</td><td class="flow-positive">+222.0</td></tr><tr><td class="rank-cell">4</td><td>159792.SZ</td><td>富国中证港股通互联网ETF</td><td class="category-cell">港股 / 港股科技</td><td>+19.57%</td><td>2,113</td><td class="flow-positive">+214.8</td></tr><tr><td class="rank-cell">5</td><td>510310.SH</td><td>易方达沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.91%</td><td>1,292</td><td class="flow-positive">+191.9</td></tr><tr><td class="rank-cell">6</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>-3.98%</td><td>831.0</td><td class="flow-positive">+171.5</td></tr><tr><td class="rank-cell">7</td><td>511880.SH</td><td>银华货币ETF-A</td><td class="category-cell">货币</td><td>+0.39%</td><td>8,857</td><td class="flow-positive">+133.4</td></tr><tr><td class="rank-cell">8</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>-1.64%</td><td>1,921</td><td class="flow-positive">+129.3</td></tr><tr><td class="rank-cell">9</td><td>159636.SZ</td><td>工银瑞信国证港股通科技ETF</td><td class="category-cell">港股 / 港股科技</td><td>+21.38%</td><td>627.1</td><td class="flow-positive">+122.2</td></tr><tr><td class="rank-cell">10</td><td>159934.SZ</td><td>易方达黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+26.05%</td><td>648.3</td><td class="flow-positive">+107.3</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+1.63%</td><td>3,201</td><td class="flow-negative">-180.8</td></tr><tr><td class="rank-cell">2</td><td>513050.SH</td><td>易方达中证海外中国互联网50ETF(QDII)</td><td class="category-cell">海外</td><td>+15.61%</td><td>2,783</td><td class="flow-negative">-78.26</td></tr><tr><td class="rank-cell">3</td><td>511030.SH</td><td>平安中债-中高等级公司债利差因子ETF</td><td class="category-cell">债券 / 信用债</td><td>+0.44%</td><td>638.0</td><td class="flow-negative">-77.00</td></tr><tr><td class="rank-cell">4</td><td>513060.SH</td><td>博时恒生医疗保健ETF(QDII)</td><td class="category-cell">港股 / 港股医药</td><td>+24.87%</td><td>1,274</td><td class="flow-negative">-72.08</td></tr><tr><td class="rank-cell">5</td><td>563360.SH</td><td>华泰柏瑞中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-3.85%</td><td>1,479</td><td class="flow-negative">-70.54</td></tr><tr><td class="rank-cell">6</td><td>513330.SH</td><td>华夏恒生互联网科技业ETF(QDII)</td><td class="category-cell">港股 / 港股科技</td><td>+11.99%</td><td>3,366</td><td class="flow-negative">-70.00</td></tr><tr><td class="rank-cell">7</td><td>159338.SZ</td><td>国泰中证A500ETF</td><td class="category-cell">宽基 / 中证A500</td><td>-3.77%</td><td>2,543</td><td class="flow-negative">-58.64</td></tr><tr><td class="rank-cell">8</td><td>159920.SZ</td><td>华夏恒生ETF(QDII)</td><td class="category-cell">港股 / 港股宽基</td><td>+10.83%</td><td>845.5</td><td class="flow-negative">-55.73</td></tr><tr><td class="rank-cell">9</td><td>511380.SH</td><td>博时中证可转债及可交换债券ETF</td><td class="category-cell">债券 / 可转债</td><td>+2.16%</td><td>3,264</td><td class="flow-negative">-41.24</td></tr><tr><td class="rank-cell">10</td><td>512480.SH</td><td>国联安中证全指半导体产品与设备ETF</td><td class="category-cell">科技 / 半导体</td><td>+5.05%</td><td>1,070</td><td class="flow-negative">-40.81</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+
+      <div class="period-panel" data-period-panel="12M">
+        <section class="detail-section">
+          <div class="section-title">
+            <h2>12月 ETF 明细</h2>
+            <p class="section-caption">按区间累计估算净额排序，流入与流出各保留前十</p>
+          </div>
+          <div class="detail-leaderboards">
+      <div class="detail-board">
+        <h3>流入前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>510300.SH</td><td>华泰柏瑞沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+6.91%</td><td>13,048</td><td class="flow-positive">+1,341</td></tr><tr><td class="rank-cell">2</td><td>510330.SH</td><td>华夏沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+6.88%</td><td>2,295</td><td class="flow-positive">+789.2</td></tr><tr><td class="rank-cell">3</td><td>159919.SZ</td><td>嘉实沪深300ETF</td><td class="category-cell">宽基 / 沪深300</td><td>+6.85%</td><td>3,128</td><td class="flow-positive">+531.0</td></tr><tr><td class="rank-cell">4</td><td>510050.SH</td><td>华夏上证50ETF</td><td class="category-cell">宽基 / 上证50</td><td>+9.45%</td><td>6,405</td><td class="flow-positive">+355.9</td></tr><tr><td class="rank-cell">5</td><td>159792.SZ</td><td>富国中证港股通互联网ETF</td><td class="category-cell">港股 / 港股科技</td><td>+40.13%</td><td>3,587</td><td class="flow-positive">+308.1</td></tr><tr><td class="rank-cell">6</td><td>518880.SH</td><td>华安易富黄金ETF</td><td class="category-cell">商品 / 黄金</td><td>+41.12%</td><td>4,919</td><td class="flow-positive">+293.3</td></tr><tr><td class="rank-cell">7</td><td>511520.SH</td><td>富国中债7-10年政策性金融债ETF</td><td class="category-cell">债券 / 政金债</td><td>+7.63%</td><td>17,126</td><td class="flow-positive">+283.3</td></tr><tr><td class="rank-cell">8</td><td>512100.SH</td><td>南方中证1000ETF</td><td class="category-cell">宽基 / 中证1000</td><td>+8.47%</td><td>4,864</td><td class="flow-positive">+249.6</td></tr><tr><td class="rank-cell">9</td><td>511380.SH</td><td>博时中证可转债及可交换债券ETF</td><td class="category-cell">债券 / 可转债</td><td>+6.51%</td><td>7,066</td><td class="flow-positive">+246.5</td></tr><tr><td class="rank-cell">10</td><td>159915.SZ</td><td>易方达创业板ETF</td><td class="category-cell">宽基 / 创业板</td><td>+4.57%</td><td>8,587</td><td class="flow-positive">+231.0</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="detail-board">
+        <h3>流出前十</h3>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>名称</th><th>分类</th><th>区间涨跌幅</th><th>成交额（亿）</th><th>估算净额（亿）</th></tr>
+          </thead>
+          <tbody><tr><td class="rank-cell">1</td><td>588000.SH</td><td>华夏上证科创板50成份ETF</td><td class="category-cell">宽基 / 科创50</td><td>+30.79%</td><td>10,053</td><td class="flow-negative">-244.7</td></tr><tr><td class="rank-cell">2</td><td>513330.SH</td><td>华夏恒生互联网科技业ETF(QDII)</td><td class="category-cell">港股 / 港股科技</td><td>+24.20%</td><td>8,615</td><td class="flow-negative">-148.6</td></tr><tr><td class="rank-cell">3</td><td>513050.SH</td><td>易方达中证海外中国互联网50ETF(QDII)</td><td class="category-cell">海外</td><td>+32.29%</td><td>6,019</td><td class="flow-negative">-142.1</td></tr><tr><td class="rank-cell">4</td><td>159995.SZ</td><td>华夏国证半导体芯片ETF</td><td class="category-cell">科技 / 半导体</td><td>+46.56%</td><td>1,849</td><td class="flow-negative">-95.96</td></tr><tr><td class="rank-cell">5</td><td>512480.SH</td><td>国联安中证全指半导体产品与设备ETF</td><td class="category-cell">科技 / 半导体</td><td>+48.67%</td><td>3,540</td><td class="flow-negative">-94.99</td></tr><tr><td class="rank-cell">6</td><td>512880.SH</td><td>国泰中证全指证券公司ETF</td><td class="category-cell">金融 / 证券</td><td>+16.20%</td><td>3,634</td><td class="flow-negative">-85.79</td></tr><tr><td class="rank-cell">7</td><td>511880.SH</td><td>银华货币ETF-A</td><td class="category-cell">货币</td><td>+1.36%</td><td>27,351</td><td class="flow-negative">-84.61</td></tr><tr><td class="rank-cell">8</td><td>512760.SH</td><td>国泰CES半导体芯片行业ETF</td><td class="category-cell">科技 / 半导体</td><td>+46.14%</td><td>1,115</td><td class="flow-negative">-75.19</td></tr><tr><td class="rank-cell">9</td><td>511030.SH</td><td>平安中债-中高等级公司债利差因子ETF</td><td class="category-cell">债券 / 信用债</td><td>+2.33%</td><td>1,390</td><td class="flow-negative">-62.09</td></tr><tr><td class="rank-cell">10</td><td>159920.SZ</td><td>华夏恒生ETF(QDII)</td><td class="category-cell">港股 / 港股宽基</td><td>+29.34%</td><td>2,387</td><td class="flow-negative">-60.08</td></tr></tbody>
+        </table>
+        </div>
+      </div>
+</div>
+        </section>
+      </div>
+
+    </section>
+  </main>
+  <script>
+
+(function () {
+  var toneClasses = ["flow-positive", "flow-negative", "flow-neutral"];
+  function setTone(element, className) {
+    if (!element) { return; }
+    toneClasses.forEach(function (name) { element.classList.remove(name); });
+    if (className) { element.classList.add(className); }
+  }
+  function updateHeader(button) {
+    if (!button) { return; }
+    var fields = {
+      "period-net": {
+        text: button.getAttribute("data-period-net-text"),
+        className: button.getAttribute("data-period-net-class"),
+        caption: button.getAttribute("data-period-caption")
+      },
+      "daily-net": {
+        text: button.getAttribute("data-daily-net-text"),
+        className: button.getAttribute("data-daily-net-class"),
+        caption: button.getAttribute("data-daily-caption")
+      },
+      "direction": {
+        text: button.getAttribute("data-direction-text"),
+        className: button.getAttribute("data-direction-class"),
+        caption: button.getAttribute("data-direction-caption")
+      },
+      "destination": {
+        text: button.getAttribute("data-destination-text"),
+        className: button.getAttribute("data-destination-class"),
+        caption: button.getAttribute("data-destination-caption")
+      }
+    };
+    Object.keys(fields).forEach(function (key) {
+      var card = document.querySelector('[data-header-card="' + key + '"]');
+      if (!card) { return; }
+      var valueNode = card.querySelector("[data-header-value]");
+      var captionNode = card.querySelector("[data-header-caption]");
+      if (valueNode && fields[key].text !== null) {
+        valueNode.textContent = fields[key].text;
+        setTone(valueNode, fields[key].className);
+      }
+      if (captionNode && fields[key].caption !== null) {
+        captionNode.textContent = fields[key].caption;
+      }
+    });
+  }
+  function setView(name) {
+    document.querySelectorAll("[data-view-target]").forEach(function (button) {
+      button.classList.toggle("is-active", button.getAttribute("data-view-target") === name);
+    });
+    document.querySelectorAll("[data-view-panel]").forEach(function (panel) {
+      panel.classList.toggle("is-active", panel.getAttribute("data-view-panel") === name);
+    });
+  }
+  function setPeriod(key) {
+    document.querySelectorAll("[data-period-target]").forEach(function (button) {
+      button.classList.toggle("is-active", button.getAttribute("data-period-target") === key);
+    });
+    document.querySelectorAll("[data-period-panel]").forEach(function (panel) {
+      panel.classList.toggle("is-active", panel.getAttribute("data-period-panel") === key);
+    });
+    updateHeader(document.querySelector('[data-period-target="' + key + '"]'));
+  }
+  document.querySelectorAll("[data-view-target]").forEach(function (button) {
+    button.addEventListener("click", function () { setView(button.getAttribute("data-view-target")); });
+  });
+  document.querySelectorAll("[data-period-target]").forEach(function (button) {
+    button.addEventListener("click", function () { setPeriod(button.getAttribute("data-period-target")); });
+  });
+  updateHeader(document.querySelector("[data-period-target].is-active"));
+})();
+
+  </script>
+</body>
+</html>
