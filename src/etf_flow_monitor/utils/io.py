@@ -12,12 +12,21 @@ import pandas as pd
 
 
 USER_CSV_ENCODING = "utf-8-sig"
+USER_CSV_FALLBACK_ENCODINGS = ("gb18030",)
 _BLANK_TEXT_VALUES = {"", "nan", "nat", "none", "null", "#n/a", "na"}
 
 
 def read_user_csv(path: Path, *, dtype: object = str) -> pd.DataFrame:
     """Read a user-editable CSV with Excel-friendly defaults."""
-    return pd.read_csv(path, encoding=USER_CSV_ENCODING, dtype=dtype, keep_default_na=False)
+    try:
+        return pd.read_csv(path, encoding=USER_CSV_ENCODING, dtype=dtype, keep_default_na=False)
+    except UnicodeDecodeError:
+        for encoding in USER_CSV_FALLBACK_ENCODINGS:
+            try:
+                return pd.read_csv(path, encoding=encoding, dtype=dtype, keep_default_na=False)
+            except UnicodeDecodeError:
+                continue
+        raise
 
 
 def write_user_csv(path: Path, frame: pd.DataFrame) -> None:

@@ -125,6 +125,17 @@ def test_category_map_loader_accepts_excel_formula_text_and_chinese(tmp_path) ->
     assert category_map.loc[0, "subcategory"] == "半导体材料"
 
 
+def test_category_map_loader_accepts_gb18030_excel_csv(tmp_path) -> None:
+    path = tmp_path / "etf_category_map.csv"
+    payload = "fund_code,category,subcategory,review_note\n510300.SH,电子,半导体材料,ANSI保存\n"
+    path.write_bytes(payload.encode("gb18030"))
+
+    category_map = load_category_map(path)
+
+    assert category_map.loc[0, "fund_code"] == "510300.SH"
+    assert category_map.loc[0, "category"] == "电子"
+    assert category_map.loc[0, "subcategory"] == "半导体材料"
+
 def test_trading_calendar_from_frame_maps_closed_day() -> None:
     frame = pd.DataFrame(
         [
