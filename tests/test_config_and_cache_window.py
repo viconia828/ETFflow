@@ -12,14 +12,17 @@ from etf_flow_monitor.utils.calendar import trading_calendar_from_frame
 from etf_flow_monitor.utils.io import parse_excel_friendly_date
 from etf_flow_monitor.utils.proxy import proxy_bypass_env
 from tools.publish_pages import (
+    infer_github_repo_slug,
     infer_pages_url,
     infer_trade_key,
+    latest_github_pages_deployment_state,
     remove_tree,
     resolve_dashboard_path,
     resolve_dashboard_range,
     resolve_publish_repo_url,
     stage_dashboard,
     stage_dashboards,
+    wait_for_github_pages_deployment,
 )
 from tools.update_flow_cache import (
     _calendar_refresh_status,
@@ -142,6 +145,78 @@ def test_publish_pages_url_can_include_version_token() -> None:
         infer_pages_url("git@github.com:viconia828/ETFflow.git", "20260601", version_token="abc123")
         == "https://viconia828.github.io/ETFflow/reports/20260601/?v=abc123"
     )
+
+
+def test_github_repo_slug_supports_ssh_and_https_urls() -> None:
+    assert infer_github_repo_slug("git@github.com:viconia828/ETFflow.git") == ("viconia828", "ETFflow")
+    assert infer_github_repo_slug("https://github.com/viconia828/ETFflow.git") == ("viconia828", "ETFflow")
+    assert infer_github_repo_slug("git@example.com:viconia828/ETFflow.git") is None
+
+
+def test_latest_github_pages_deployment_state_reads_failure_status() -> None:
+    calls: list[str] = []
+
+    def fake_get_json(url: str):  # noqa: ANN202
+        calls.append(url)
+        if "deployments?" in url:
+            return [{"statuses_url": "https://api.github.test/statuses"}]
+        return [
+            {
+                "state": "failure",
+                "description": "Deployment failed, try again later.",
+                "target_url": "https://github.com/viconia828/ETFflow/actions/runs/1/job/2",
+                "environment_url": "https://viconia828.github.io/ETFflow/",
+            }
+        ]
+
+    check = latest_github_pages_deployment_state(
+        "git@github.com:viconia828/ETFflow.git",
+        "abc123",
+        http_get_json=fake_get_json,
+    )
+
+    assert check.state == "failure"
+    assert check.message == "Deployment failed, try again later."
+    assert check.target_url.endswith("/job/2")
+    assert "sha=abc123" in calls[0]
+    assert "environment=github-pages" in calls[0]
+
+
+def test_wait_for_github_pages_deployment_polls_until_success() -> None:
+    deployment_calls = 0
+    clock = 0.0
+    sleeps: list[float] = []
+
+    def fake_get_json(url: str):  # noqa: ANN202
+        nonlocal deployment_calls
+        if "deployments?" in url:
+            deployment_calls += 1
+            if deployment_calls == 1:
+                return []
+            return [{"statuses_url": "https://api.github.test/statuses"}]
+        return [{"state": "success", "description": "ok"}]
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    def fake_monotonic() -> float:
+        return clock
+
+    check = wait_for_github_pages_deployment(
+        "https://github.com/viconia828/ETFflow.git",
+        "abc123",
+        timeout_seconds=10,
+        poll_seconds=1,
+        http_get_json=fake_get_json,
+        sleep=fake_sleep,
+        monotonic=fake_monotonic,
+    )
+
+    assert check.state == "success"
+    assert deployment_calls == 2
+    assert sleeps == [1]
 
 
 def test_remove_tree_handles_read_only_files(tmp_path) -> None:

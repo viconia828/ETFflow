@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import timedelta
 import hashlib
 from html import escape
+import json
 import os
 from pathlib import Path
 import re
@@ -13,6 +15,10 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
+from typing import Any, Callable
+from urllib.parse import urlencode
+from urllib.request import Request, build_opener, ProxyHandler
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
@@ -35,6 +41,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote", default="", help="Remote name used inside the temporary clone. Defaults to origin.")
     parser.add_argument("--branch", default="", help="Pages branch. Defaults to config pages_branch.")
     parser.add_argument("--worktree", default="tmp_pages_publish")
+    parser.add_argument(
+        "--deployment-timeout-seconds",
+        type=float,
+        default=120.0,
+        help="Wait for GitHub Pages deployment after push. Use 0 to skip the check.",
+    )
+    parser.add_argument("--deployment-poll-seconds", type=float, default=3.0)
     parser.add_argument("--dry-run", action="store_true", help="Resolve inputs and print intended publish action without git operations.")
     return parser
 
@@ -123,6 +136,29 @@ def main(argv: list[str] | None = None) -> int:
     if push.returncode != 0:
         print("[pages] push failed; check network and GitHub SSH configuration.", flush=True)
         print(push.stderr.strip(), flush=True)
+        return 1
+    commit_sha = git_output(["git", "rev-parse", "HEAD"], cwd=worktree, env=git_env)
+    deployment_check = wait_for_github_pages_deployment(
+        remote_url,
+        commit_sha,
+        timeout_seconds=args.deployment_timeout_seconds,
+        poll_seconds=args.deployment_poll_seconds,
+    )
+    if deployment_check.state == "success":
+        print("[pages] GitHub Pages deployment succeeded.", flush=True)
+    elif deployment_check.state == "skipped":
+        print(f"[pages] deployment check skipped: {deployment_check.message}", flush=True)
+    elif deployment_check.state in FAILED_DEPLOYMENT_STATES:
+        print(f"[pages] GitHub Pages deployment failed: {deployment_check.message or deployment_check.state}", flush=True)
+        if deployment_check.target_url:
+            print(f"[pages] deployment log={deployment_check.target_url}", flush=True)
+        remove_tree(worktree, ignore_errors=True)
+        return 1
+    elif deployment_check.state:
+        print(f"[pages] GitHub Pages deployment not confirmed: {deployment_check.message or deployment_check.state}", flush=True)
+        if deployment_check.target_url:
+            print(f"[pages] deployment log={deployment_check.target_url}", flush=True)
+        remove_tree(worktree, ignore_errors=True)
         return 1
 
     print(f"[pages] published {trade_key}.", flush=True)
@@ -324,13 +360,118 @@ def format_trade_key(trade_key: str) -> str:
 
 
 def infer_pages_url(remote_url: str, trade_key: str, *, version_token: str = "") -> str:
-    match = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$", remote_url.strip())
-    if not match:
+    slug = infer_github_repo_slug(remote_url)
+    if not slug:
         return ""
-    owner = match.group("owner")
-    repo = match.group("repo")
+    owner, repo = slug
     version = f"?v={version_token}" if version_token else ""
     return f"https://{owner}.github.io/{repo}/reports/{trade_key}/{version}"
+
+
+FAILED_DEPLOYMENT_STATES = {"failure", "error", "cancelled", "timed_out", "action_required", "inactive"}
+PENDING_DEPLOYMENT_STATES = {"", "waiting", "queued", "pending", "in_progress", "requested", "unknown"}
+
+
+@dataclass(frozen=True)
+class DeploymentCheck:
+    state: str
+    message: str = ""
+    target_url: str = ""
+    environment_url: str = ""
+
+
+def infer_github_repo_slug(remote_url: str) -> tuple[str, str] | None:
+    match = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/?#]+)", remote_url.strip())
+    if not match:
+        return None
+    repo = match.group("repo")
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    return match.group("owner"), repo
+
+
+def github_api_json(url: str, *, timeout_seconds: float = 10.0) -> Any:
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "etf-flow-monitor-pages-publisher",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    opener = build_opener(ProxyHandler({}))
+    with opener.open(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def latest_github_pages_deployment_state(
+    remote_url: str,
+    commit_sha: str,
+    *,
+    http_get_json: Callable[[str], Any] = github_api_json,
+) -> DeploymentCheck:
+    slug = infer_github_repo_slug(remote_url)
+    if not slug:
+        return DeploymentCheck("skipped", "remote is not a GitHub repository")
+    owner, repo = slug
+    query = urlencode({"sha": commit_sha, "environment": "github-pages", "per_page": "5"})
+    deployments_url = f"https://api.github.com/repos/{owner}/{repo}/deployments?{query}"
+    deployments = http_get_json(deployments_url)
+    if not isinstance(deployments, list):
+        raise RuntimeError("GitHub deployments API returned an unexpected payload")
+    if not deployments:
+        return DeploymentCheck("pending", "GitHub Pages deployment has not been created yet")
+
+    deployment = deployments[0]
+    statuses_url = str(deployment.get("statuses_url") or "")
+    if not statuses_url:
+        return DeploymentCheck("pending", "GitHub Pages deployment has no statuses URL yet")
+    statuses = http_get_json(statuses_url)
+    if not isinstance(statuses, list):
+        raise RuntimeError("GitHub deployment statuses API returned an unexpected payload")
+    if not statuses:
+        return DeploymentCheck("pending", "GitHub Pages deployment has no status yet")
+
+    status = statuses[0]
+    state = str(status.get("state") or "").lower()
+    message = str(status.get("description") or state or "unknown")
+    return DeploymentCheck(
+        state=state or "unknown",
+        message=message,
+        target_url=str(status.get("target_url") or status.get("log_url") or ""),
+        environment_url=str(status.get("environment_url") or ""),
+    )
+
+
+def wait_for_github_pages_deployment(
+    remote_url: str,
+    commit_sha: str,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float,
+    http_get_json: Callable[[str], Any] = github_api_json,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> DeploymentCheck:
+    if timeout_seconds <= 0:
+        return DeploymentCheck("skipped", "deployment wait disabled")
+    if not infer_github_repo_slug(remote_url):
+        return DeploymentCheck("skipped", "remote is not a GitHub repository")
+
+    deadline = monotonic() + timeout_seconds
+    last_check = DeploymentCheck("pending", "waiting for GitHub Pages deployment")
+    while True:
+        try:
+            last_check = latest_github_pages_deployment_state(remote_url, commit_sha, http_get_json=http_get_json)
+        except Exception as exc:  # noqa: BLE001
+            last_check = DeploymentCheck("unknown", f"GitHub Pages deployment check failed: {exc}")
+        if last_check.state == "success" or last_check.state in FAILED_DEPLOYMENT_STATES:
+            return last_check
+        if last_check.state not in PENDING_DEPLOYMENT_STATES:
+            return last_check
+        if monotonic() >= deadline:
+            return DeploymentCheck("timeout", f"GitHub Pages deployment was not confirmed within {timeout_seconds:g}s")
+        sleep(max(float(poll_seconds), 0.5))
 
 
 def ensure_safe_temp_path(path: Path) -> None:
