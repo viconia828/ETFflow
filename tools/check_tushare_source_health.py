@@ -19,7 +19,7 @@ if str(SRC_DIR) not in sys.path:
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import load_category_map  # noqa: E402
 from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
-from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, trading_calendar_from_frame  # noqa: E402
+from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input, resolve_monitor_market_date, trading_calendar_from_frame  # noqa: E402
 from etf_flow_monitor.utils.io import write_json  # noqa: E402
 
 
@@ -59,8 +59,14 @@ def main(argv: list[str] | None = None) -> int:
             refresh=args.refresh,
         )
         calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
-        trade_date = pd.Timestamp(calendar.resolve_request_date_market_date(requested_date.date())).normalize()
+        resolved_date, calendar_mode = resolve_monitor_market_date(
+            calendar,
+            requested_date.date(),
+            explicit_request=bool(str(args.trade_date or "").strip()),
+        )
+        trade_date = pd.Timestamp(resolved_date).normalize()
         payload["market_date"] = trade_date.strftime("%Y-%m-%d")
+        payload["calendar_mode"] = calendar_mode
         payload["checks"]["trade_cal"] = _ok(rows=len(calendar_frame), message="official calendar loaded")
     except Exception as exc:  # noqa: BLE001
         payload["market_date"] = ""

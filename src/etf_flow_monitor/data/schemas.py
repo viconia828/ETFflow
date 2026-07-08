@@ -135,7 +135,7 @@ def normalize_etf_share_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
 
 
 def normalize_calendar_frame(rows: list[dict[str, Any]] | pd.DataFrame | None) -> pd.DataFrame:
-    frame = pd.DataFrame(rows or [])
+    frame = pd.DataFrame() if rows is None else pd.DataFrame(rows)
     for column in ("exchange", "cal_date", "is_open", "pretrade_date"):
         if column not in frame.columns:
             frame[column] = pd.NA
@@ -144,4 +144,9 @@ def normalize_calendar_frame(rows: list[dict[str, Any]] | pd.DataFrame | None) -
     frame["cal_date"] = pd.to_datetime(frame["cal_date"], errors="coerce")
     frame["pretrade_date"] = pd.to_datetime(frame["pretrade_date"], errors="coerce")
     frame["is_open"] = pd.to_numeric(frame["is_open"], errors="coerce").fillna(0).astype(int)
-    return frame[frame["cal_date"].notna()].sort_values(["exchange", "cal_date"], kind="stable").reset_index(drop=True)
+    return (
+        frame[frame["cal_date"].notna()]
+        .sort_values(["exchange", "cal_date"], kind="stable")
+        .drop_duplicates(subset=["exchange", "cal_date"], keep="last")
+        .reset_index(drop=True)
+    )

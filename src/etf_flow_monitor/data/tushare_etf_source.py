@@ -17,6 +17,10 @@ from etf_flow_monitor.data.tushare_http import TushareHttpClient, load_tushare_r
 from etf_flow_monitor.utils.io import format_tushare_date, merge_frames
 
 
+class IncompleteMarketCoverageError(RuntimeError):
+    pass
+
+
 class TushareEtfSource:
     """Thin source layer around Tushare endpoints used by the monitor."""
 
@@ -130,6 +134,7 @@ class TushareEtfSource:
                     fields="ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
                 )
                 frame = normalize_etf_daily_frame(pd.DataFrame(rows))
+                _validate_daily_market_coverage(frame, code_set, dataset_name='fund_daily', trade_date=trade_date)
                 if self.cache is not None:
                     self.cache.save_daily_cross_section(self.source_name, "etf_daily", trade_date, frame)
             else:
@@ -197,6 +202,7 @@ class TushareEtfSource:
                     fields="ts_code,trade_date,fd_share",
                 )
                 frame = normalize_etf_share_frame(pd.DataFrame(rows).assign(source="tushare:fund_share"))
+                _validate_daily_market_coverage(frame, code_set, dataset_name='fund_share', trade_date=trade_date)
                 if self.cache is not None:
                     self.cache.save_daily_cross_section(self.source_name, "etf_share", trade_date, frame)
             else:
@@ -225,6 +231,44 @@ def _unique_trade_dates(trade_dates: list[object]) -> list[str]:
         if normalized and normalized not in ordered:
             ordered.append(normalized)
     return ordered
+
+
+def _validate_daily_market_coverage(
+    frame: pd.DataFrame,
+    requested_codes: set[str],
+    *,
+    dataset_name: str,
+    trade_date: str,
+) -> None:
+    normalized_requested = set(_unique_codes(list(requested_codes)))
+    expected_markets = _exchange_suffixes(normalized_requested)
+    if len(expected_markets) < 2:
+        return
+    if 'fund_code' in frame.columns:
+        returned_codes = set(_unique_codes(frame['fund_code'].tolist())) & normalized_requested
+        returned_markets = _exchange_suffixes(returned_codes)
+    else:
+        returned_markets = set()
+    missing_markets = sorted(expected_markets - returned_markets)
+    if not missing_markets:
+        return
+    message = (
+        'Tushare ' + str(dataset_name) + ' daily cross-section ' + str(trade_date)
+        + ' returned no ' + '/'.join(missing_markets)
+        + ' rows; refusing to cache an incomplete market slice.'
+    )
+    raise IncompleteMarketCoverageError(message)
+
+
+def _exchange_suffixes(codes: list[object] | set[str]) -> set[str]:
+    markets: set[str] = set()
+    for code in codes:
+        text = str(code or '').strip().upper()
+        if text.endswith('.SH'):
+            markets.add('SH')
+        elif text.endswith('.SZ'):
+            markets.add('SZ')
+    return markets
 
 
 def _covers_date_range(frame: pd.DataFrame | None, column: str, start_key: pd.Timestamp, end_key: pd.Timestamp) -> bool:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 FALLBACK_CALENDAR_EXCHANGES = {"BIZ"}
+MARKET_DATE_CUTOFF_HOUR = 21
 
 
 def get_shanghai_now(now: datetime | None = None) -> datetime:
@@ -24,6 +25,17 @@ def get_shanghai_now(now: datetime | None = None) -> datetime:
 
 def current_shanghai_date() -> date:
     return get_shanghai_now().date()
+
+
+def is_after_market_date_cutoff(
+    now: datetime | None = None,
+    *,
+    cutoff_hour: int = MARKET_DATE_CUTOFF_HOUR,
+) -> bool:
+    hour = int(cutoff_hour)
+    if hour < 0 or hour > 23:
+        raise ValueError("cutoff_hour must be between 0 and 23")
+    return get_shanghai_now(now).time() >= time(hour, 0)
 
 
 def normalize_date_input(value: Any, field_name: str = "date") -> date:
@@ -56,14 +68,28 @@ def resolve_monitor_market_date(
     *,
     explicit_request: bool,
     current_date: date | None = None,
+    current_datetime: datetime | None = None,
+    cutoff_hour: int = MARKET_DATE_CUTOFF_HOUR,
 ) -> tuple[date, str]:
     requested = normalize_date_input(request_date, field_name="request_date")
+    now = get_shanghai_now(current_datetime)
+    today = normalize_date_input(current_date or now.date(), field_name="current_date")
+    if current_datetime is None and current_date is not None:
+        now = datetime.combine(today, time.min, tzinfo=SHANGHAI_TZ)
+
+    resolved_request_date = calendar.resolve_request_date_market_date(requested)
+    mode_prefix = "explicit" if explicit_request else "latest"
+    if resolved_request_date != requested:
+        return resolved_request_date, f"{mode_prefix}_non_trading_request_date_previous_market_date"
+    if requested == today:
+        if is_after_market_date_cutoff(now, cutoff_hour=cutoff_hour):
+            return requested, f"{mode_prefix}_current_trading_day_after_21_market_date"
+        return calendar.shift_trade_date(requested, -1), f"{mode_prefix}_current_trading_day_before_21_previous_market_date"
     if explicit_request:
-        today = normalize_date_input(current_date or current_shanghai_date(), field_name="current_date")
-        if requested == today:
-            return calendar.resolve_market_date(requested), "explicit_current_date_latest_available_market_date"
-        return calendar.resolve_request_date_market_date(requested), "explicit_request_date"
-    return calendar.resolve_market_date(requested), "latest_available_market_date"
+        if requested < today:
+            return resolved_request_date, "explicit_past_request_date"
+        return resolved_request_date, "explicit_future_request_date"
+    return resolved_request_date, "latest_available_market_date"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +115,9 @@ def ensure_official_calendar_rows(
     *,
     expected_exchange: str | None = None,
 ) -> tuple[TradeCalendarRow, ...]:
-    ordered_rows = tuple(sorted(rows, key=lambda item: item.cal_date))
+    ordered_input = sorted(rows, key=lambda item: (str(item.exchange or "").strip().upper(), item.cal_date))
+    row_map = {(str(row.exchange or "").strip().upper(), row.cal_date): row for row in ordered_input}
+    ordered_rows = tuple(sorted(row_map.values(), key=lambda item: item.cal_date))
     if not ordered_rows:
         raise ValueError("TradingCalendar requires at least one calendar row")
     invalid_exchanges = sorted(

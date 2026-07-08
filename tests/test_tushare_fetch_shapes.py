@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from etf_flow_monitor.data.cache_store import CacheStore
-from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource
+from etf_flow_monitor.data.tushare_etf_source import IncompleteMarketCoverageError, TushareEtfSource, _validate_daily_market_coverage
 
 
 class FakeTushareClient:
@@ -111,3 +112,25 @@ def test_get_etf_daily_by_trade_dates_can_read_cached_subset_columns(tmp_path) -
     assert cached.loc[0, "amount"] == 50.0
     assert pd.isna(cached.loc[0, "open"])
     assert len(client.calls) == 1
+
+
+def test_get_etf_share_by_trade_dates_rejects_single_market_cross_section(tmp_path) -> None:
+    client = FakeTushareClient()
+    source = TushareEtfSource(client=client, cache=CacheStore(tmp_path / 'cache'))
+
+    with pytest.raises(IncompleteMarketCoverageError, match='returned no SZ'):
+        source.get_etf_share_by_trade_dates(['510300.SH', '159915.SZ'], ['2026-06-25'], refresh=True)
+
+    cache_file = tmp_path / 'cache' / 'tushare' / 'daily_cross_section' / 'etf_share' / '20260625.csv'
+    assert not cache_file.exists()
+
+def test_daily_market_coverage_ignores_unrequested_market_rows() -> None:
+    frame = pd.DataFrame({"fund_code": ["588000.SH", "159915.SZ"]})
+
+    with pytest.raises(IncompleteMarketCoverageError, match="returned no SH"):
+        _validate_daily_market_coverage(
+            frame,
+            {"510300.SH", "159915.SZ"},
+            dataset_name="fund_share",
+            trade_date="20260625",
+        )

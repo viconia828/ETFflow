@@ -18,7 +18,7 @@ if str(SRC_DIR) not in sys.path:
 
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import category_map_codes, load_category_map  # noqa: E402
-from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
+from etf_flow_monitor.data.tushare_etf_source import IncompleteMarketCoverageError, TushareEtfSource  # noqa: E402
 from etf_flow_monitor.utils.calendar import (  # noqa: E402
     current_shanghai_date,
     normalize_date_input,
@@ -26,6 +26,9 @@ from etf_flow_monitor.utils.calendar import (  # noqa: E402
     trading_calendar_from_frame,
 )
 from etf_flow_monitor.utils.io import format_tushare_date  # noqa: E402
+
+
+INCOMPLETE_MARKET_COVERAGE_EXIT_CODE = 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,6 +141,10 @@ def main(argv: list[str] | None = None) -> int:
             state.trade_date = trade_date
             source.get_etf_share_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
+    except IncompleteMarketCoverageError as exc:
+        print('[cache] daily cross-section incomplete: ' + str(exc), flush=True)
+        print('[cache] no incomplete cache file was written; BAT will skip report generation for this run.', flush=True)
+        return INCOMPLETE_MARKET_COVERAGE_EXIT_CODE
     except Exception as exc:  # noqa: BLE001
         _print_update_failure(config.cache_dir, source.source_name, exc)
         return 0

@@ -176,9 +176,9 @@ def test_monitor_market_date_rolls_back_when_explicit_request_is_today() -> None
     )
 
     assert market_date == pd.Timestamp("2026-06-25").date()
-    assert mode == "explicit_current_date_latest_available_market_date"
+    assert mode == "explicit_current_trading_day_before_21_previous_market_date"
     assert historical_date == pd.Timestamp("2026-06-25").date()
-    assert historical_mode == "explicit_request_date"
+    assert historical_mode == "explicit_past_request_date"
 
 
 def test_validate_category_map_flags_duplicates(tmp_path) -> None:
@@ -289,3 +289,98 @@ def test_refine_category_map_with_sw_skips_composite_index_and_maps_securities()
     assert refined.loc[refined["fund_code"].eq("515190.SH"), "subcategory"].item() == "中证500"
     assert refined.loc[refined["fund_code"].eq("512000.SH"), "category"].item() == "非银金融"
     assert refined.loc[refined["fund_code"].eq("512000.SH"), "subcategory"].item() == "证券"
+
+def test_trading_calendar_from_frame_deduplicates_open_dates_before_shift() -> None:
+    frame = pd.DataFrame(
+        [
+            {"exchange": "SSE", "cal_date": "2026-06-29", "is_open": 1, "pretrade_date": "2026-06-26"},
+            {"exchange": "SSE", "cal_date": "2026-06-29", "is_open": 1, "pretrade_date": "2026-06-26"},
+            {"exchange": "SSE", "cal_date": "2026-06-30", "is_open": 1, "pretrade_date": "2026-06-29"},
+            {"exchange": "SSE", "cal_date": "2026-07-01", "is_open": 1, "pretrade_date": "2026-06-30"},
+            {"exchange": "SSE", "cal_date": "2026-07-02", "is_open": 1, "pretrade_date": "2026-07-01"},
+        ]
+    )
+
+    calendar = trading_calendar_from_frame(frame, exchange="SSE")
+
+    assert calendar.open_dates.count(pd.Timestamp("2026-06-29").date()) == 1
+    assert calendar.shift_trade_date(pd.Timestamp("2026-07-02").date(), -3) == pd.Timestamp("2026-06-29").date()
+
+
+def test_normalize_calendar_frame_accepts_dataframe_and_deduplicates_dates() -> None:
+    from etf_flow_monitor.data.schemas import normalize_calendar_frame
+
+    frame = pd.DataFrame(
+        [
+            {"exchange": "SSE", "cal_date": "2026-06-29", "is_open": 0, "pretrade_date": "2026-06-26"},
+            {"exchange": "SSE", "cal_date": "2026-06-29", "is_open": 1, "pretrade_date": "2026-06-26"},
+            {"exchange": "SSE", "cal_date": "2026-06-30", "is_open": 1, "pretrade_date": "2026-06-29"},
+        ]
+    )
+
+    normalized = normalize_calendar_frame(frame)
+
+    assert normalized["cal_date"].dt.strftime("%Y%m%d").tolist() == ["20260629", "20260630"]
+    assert normalized.loc[0, "is_open"] == 1
+
+def test_monitor_market_date_cutoff_for_default_current_day_requests() -> None:
+    calendar = trading_calendar_from_frame(
+        pd.DataFrame(
+            [
+                {"exchange": "SSE", "cal_date": "2026-06-24", "is_open": 1, "pretrade_date": "2026-06-23"},
+                {"exchange": "SSE", "cal_date": "2026-06-25", "is_open": 1, "pretrade_date": "2026-06-24"},
+                {"exchange": "SSE", "cal_date": "2026-06-26", "is_open": 1, "pretrade_date": "2026-06-25"},
+            ]
+        ),
+        exchange="SSE",
+    )
+
+    before_cutoff, before_mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-26").date(),
+        explicit_request=False,
+        current_datetime=pd.Timestamp("2026-06-26 20:59:00").to_pydatetime(),
+    )
+    after_cutoff, after_mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-26").date(),
+        explicit_request=False,
+        current_datetime=pd.Timestamp("2026-06-26 21:00:00").to_pydatetime(),
+    )
+
+    assert before_cutoff == pd.Timestamp("2026-06-25").date()
+    assert before_mode == "latest_current_trading_day_before_21_previous_market_date"
+    assert after_cutoff == pd.Timestamp("2026-06-26").date()
+    assert after_mode == "latest_current_trading_day_after_21_market_date"
+
+
+def test_monitor_market_date_explicit_past_input_uses_input_trade_date() -> None:
+    calendar = trading_calendar_from_frame(
+        pd.DataFrame(
+            [
+                {"exchange": "SSE", "cal_date": "2026-06-24", "is_open": 1, "pretrade_date": "2026-06-23"},
+                {"exchange": "SSE", "cal_date": "2026-06-25", "is_open": 1, "pretrade_date": "2026-06-24"},
+                {"exchange": "SSE", "cal_date": "2026-06-26", "is_open": 1, "pretrade_date": "2026-06-25"},
+                {"exchange": "SSE", "cal_date": "2026-06-27", "is_open": 0, "pretrade_date": "2026-06-26"},
+            ]
+        ),
+        exchange="SSE",
+    )
+
+    market_date, mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-25").date(),
+        explicit_request=True,
+        current_datetime=pd.Timestamp("2026-06-26 20:00:00").to_pydatetime(),
+    )
+    non_trading_date, non_trading_mode = resolve_monitor_market_date(
+        calendar,
+        pd.Timestamp("2026-06-27").date(),
+        explicit_request=True,
+        current_datetime=pd.Timestamp("2026-06-28 20:00:00").to_pydatetime(),
+    )
+
+    assert market_date == pd.Timestamp("2026-06-25").date()
+    assert mode == "explicit_past_request_date"
+    assert non_trading_date == pd.Timestamp("2026-06-26").date()
+    assert non_trading_mode == "explicit_non_trading_request_date_previous_market_date"

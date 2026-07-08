@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import os
 import stat
 
@@ -406,3 +406,20 @@ def test_proxy_bypass_env_removes_proxy_variables() -> None:
     assert "github.com" in env["NO_PROXY"]
     assert "example.com" in env["NO_PROXY"]
     assert "ProxyCommand=none" in env["GIT_SSH_COMMAND"]
+
+def test_publish_dashboard_path_current_day_after_cutoff_uses_today(tmp_path) -> None:
+    today_dashboard = tmp_path / "flow_monitor" / "20260626" / "etf_flow_dashboard.html"
+    previous_dashboard = tmp_path / "flow_monitor" / "20260625" / "etf_flow_dashboard.html"
+    today_dashboard.parent.mkdir(parents=True)
+    previous_dashboard.parent.mkdir(parents=True)
+    today_dashboard.write_text("<!doctype html><title>today</title>", encoding="utf-8")
+    previous_dashboard.write_text("<!doctype html><title>previous</title>", encoding="utf-8")
+
+    resolved = resolve_dashboard_path(
+        tmp_path,
+        trade_date="20260626",
+        current_datetime=datetime(2026, 6, 26, 21, 0),
+    )
+
+    assert resolved == today_dashboard.resolve()
+    assert infer_trade_key(resolved) == "20260626"

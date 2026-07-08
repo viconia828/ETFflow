@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, time as datetime_time, timedelta
 import hashlib
 from html import escape
 import json
@@ -26,7 +26,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from etf_flow_monitor.config import load_config  # noqa: E402
-from etf_flow_monitor.utils.calendar import current_shanghai_date, normalize_date_input  # noqa: E402
+from etf_flow_monitor.utils.calendar import get_shanghai_now, is_after_market_date_cutoff, normalize_date_input  # noqa: E402
 from etf_flow_monitor.utils.proxy import proxy_bypass_env  # noqa: E402
 
 
@@ -211,13 +211,22 @@ def resolve_publish_repo_url(cli_repo_url: str, config_repo_url: str, remote_nam
     return git_output(["git", "remote", "get-url", remote_name], cwd=PROJECT_ROOT, env=git_env)
 
 
-def resolve_dashboard_path(output_dir: Path, *, trade_date: str = "", dashboard: str = "", current_date: object = None) -> Path:
+def resolve_dashboard_path(
+    output_dir: Path,
+    *,
+    trade_date: str = "",
+    dashboard: str = "",
+    current_date: object = None,
+    current_datetime: object = None,
+) -> Path:
     if str(dashboard or "").strip():
         path = Path(dashboard).resolve()
     elif str(trade_date or "").strip():
         trade_key = normalize_trade_key(trade_date)
-        if trade_key == normalize_trade_key(current_date or current_shanghai_date()):
-            return latest_dashboard_path(output_dir, max_trade_key=_previous_calendar_key(trade_key)).resolve()
+        if trade_key == _current_trade_key(current_date=current_date, current_datetime=current_datetime):
+            now = _current_request_datetime(current_date=current_date, current_datetime=current_datetime)
+            if not is_after_market_date_cutoff(now):
+                return latest_dashboard_path(output_dir, max_trade_key=_previous_calendar_key(trade_key)).resolve()
         path = (output_dir / "flow_monitor" / trade_key / "etf_flow_dashboard.html").resolve()
         if not path.exists():
             return latest_dashboard_path(output_dir, max_trade_key=trade_key).resolve()
@@ -265,6 +274,18 @@ def resolve_dashboard_range(output_dir: Path, *, range_start: str, range_end: st
 
 def normalize_trade_key(value: object) -> str:
     return normalize_date_input(value, field_name="trade_date").strftime("%Y%m%d")
+
+
+def _current_trade_key(*, current_date: object = None, current_datetime: object = None) -> str:
+    return _current_request_datetime(current_date=current_date, current_datetime=current_datetime).strftime("%Y%m%d")
+
+
+def _current_request_datetime(*, current_date: object = None, current_datetime: object = None) -> datetime:
+    if current_datetime is not None:
+        return get_shanghai_now(current_datetime)
+    if current_date is not None:
+        return datetime.combine(normalize_date_input(current_date, field_name="current_date"), datetime_time.min)
+    return get_shanghai_now()
 
 
 def _previous_calendar_key(value: object) -> str:
