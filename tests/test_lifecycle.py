@@ -25,11 +25,13 @@ from tools.build_etf_lifecycle_table import (
     load_cached_share_cross_sections,
 )
 from tools.update_etf_announcements import (
+    _build_exchange_fallback_jobs_for_empty_windows,
     _merge_exchange_request_windows,
     build_auto_confirmations_from_retried_no_announcements,
     build_auto_confirmations_from_retried_windows,
     build_liquidation_follow_up_jobs,
     build_pending_confirmations_from_request_plan,
+    fetch_cninfo_announcements_with_exchange_fallback,
     fetch_exchange_announcements,
     fetch_tushare_announcements,
     merge_announcement_frames,
@@ -633,6 +635,83 @@ def test_fetch_exchange_announcements_normalizes_rows() -> None:
     assert skipped_reason == ""
     assert fresh.loc[0, "fund_code"] == "510300.SH"
     assert fresh.loc[0, "announcement_date"] == pd.Timestamp("2026-01-05")
+
+
+def test_exchange_fallback_jobs_only_include_empty_successful_windows() -> None:
+    jobs = [
+        {"fund_code": "510300.SH", "start_date": pd.Timestamp("2026-01-01"), "end_date": pd.Timestamp("2026-01-10")},
+        {"fund_code": "561310.SH", "start_date": pd.Timestamp("2026-07-01"), "end_date": pd.Timestamp("2026-07-15")},
+        {"fund_code": "588000.SH", "start_date": pd.Timestamp("2026-07-01"), "end_date": pd.Timestamp("2026-07-15")},
+    ]
+    announcements = pd.DataFrame(
+        [
+            {
+                "fund_code": "510300.SH",
+                "announcement_date": "20260105",
+                "title": "关于基金份额折算的公告",
+                "source_url": "https://example.com/hit.pdf",
+            }
+        ]
+    )
+
+    fallback_jobs = _build_exchange_fallback_jobs_for_empty_windows(jobs, announcements, failed_codes={"588000.SH"})
+
+    assert fallback_jobs == [
+        {"fund_code": "561310.SH", "start_date": pd.Timestamp("2026-07-01"), "end_date": pd.Timestamp("2026-07-15")}
+    ]
+
+
+class EmptyCninfoAnnouncementClient:
+    sleep_seconds = 0.0
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def fetch(self, fund_code, *, start_date, end_date):
+        self.calls.append(fund_code)
+        return []
+
+
+class ExchangeFallbackAnnouncementClient:
+    sleep_seconds = 0.0
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def fetch(self, fund_code, *, start_date, end_date):
+        self.calls.append(fund_code)
+        return [
+            {
+                "fund_code": fund_code,
+                "announcement_date": "20260703",
+                "event_date": "",
+                "title": "国泰基金管理有限公司关于国泰中证消费电子主题交易型开放式指数证券投资基金实施基金份额拆分并调整最小申购、赎回单位及相关业务安排的公告",
+                "content": "基金运作(基金) 基金折算/拆分",
+                "source_url": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2026-07-03/561310_20260703_0PCA.pdf",
+            }
+        ]
+
+
+def test_cninfo_empty_window_falls_back_to_exchange() -> None:
+    cninfo_client = EmptyCninfoAnnouncementClient()
+    exchange_client = ExchangeFallbackAnnouncementClient()
+    jobs = [{"fund_code": "561310.SH", "start_date": pd.Timestamp("2026-07-01"), "end_date": pd.Timestamp("2026-07-15")}]
+
+    fresh, errors, skipped_reason, detail = fetch_cninfo_announcements_with_exchange_fallback(
+        cninfo_client,
+        exchange_client,
+        jobs,
+        retries=0,
+    )
+
+    assert cninfo_client.calls == ["561310.SH"]
+    assert exchange_client.calls == ["561310.SH"]
+    assert errors == []
+    assert skipped_reason == ""
+    assert detail == {"exchange_fallback_jobs": 1, "exchange_fallback_rows": 1, "exchange_fallback_errors": 0}
+    assert fresh.loc[0, "fund_code"] == "561310.SH"
+    assert fresh.loc[0, "announcement_date"] == pd.Timestamp("2026-07-03")
+    assert classify_lifecycle_announcement(fresh.loc[0, "title"])[0] == "share_split"
 
 
 class FlakyExchangeAnnouncementClient:

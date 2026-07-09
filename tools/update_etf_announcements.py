@@ -139,16 +139,38 @@ def main(argv: list[str] | None = None) -> int:
                     ignore_proxy=True,
                 )
             )
-            fresh, errors, remote_skipped_reason = fetch_exchange_announcements(
-                client,
-                jobs,
-                heartbeat_seconds=args.heartbeat_seconds,
-                max_errors=args.max_errors,
-                retries=args.exchange_retries,
-                retry_sleep_seconds=args.exchange_retry_sleep_seconds,
-                stop_on_max_errors=args.stop_on_max_errors,
-                source_label=source_name,
+            exchange_fallback_client = (
+                ExchangeAnnouncementClient(
+                    page_size=args.exchange_page_size,
+                    sleep_seconds=sleep_seconds,
+                    ignore_proxy=True,
+                )
+                if source_name == "cninfo"
+                else None
             )
+            if exchange_fallback_client is not None:
+                fresh, errors, remote_skipped_reason, fallback_detail = fetch_cninfo_announcements_with_exchange_fallback(
+                    client,
+                    exchange_fallback_client,
+                    jobs,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    max_errors=args.max_errors,
+                    retries=args.exchange_retries,
+                    retry_sleep_seconds=args.exchange_retry_sleep_seconds,
+                    stop_on_max_errors=args.stop_on_max_errors,
+                )
+            else:
+                fresh, errors, remote_skipped_reason = fetch_exchange_announcements(
+                    client,
+                    jobs,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    max_errors=args.max_errors,
+                    retries=args.exchange_retries,
+                    retry_sleep_seconds=args.exchange_retry_sleep_seconds,
+                    stop_on_max_errors=args.stop_on_max_errors,
+                    source_label=source_name,
+                )
+                fallback_detail = _empty_exchange_fallback_detail()
             api_name = ""
             start_date = min((job["start_date"] for job in jobs), default=pd.NaT)
             end_date = max((job["end_date"] for job in jobs), default=pd.NaT)
@@ -158,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 "jobs": int(len(jobs)),
                 "pending_confirmations": str(pending_confirmations_path),
             }
+            source_detail.update(fallback_detail)
         elif source_name == "tushare":
             source = TushareEtfSource.from_runtime(cache_dir=config.cache_dir, search_dirs=[str(config_path.parent), str(PROJECT_ROOT)])
             basic = source.get_etf_basic(market=config.etf_market, refresh=False)
@@ -208,8 +231,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             if follow_up_jobs:
                 print(f"[ann] liquidation follow-up jobs={len(follow_up_jobs)}", flush=True)
+                follow_up_client = (
+                    exchange_fallback_client
+                    if source_name == "cninfo" and _as_int(source_detail.get("exchange_fallback_jobs"))
+                    else client
+                )
                 follow_up_fresh, follow_up_errors, _ = fetch_exchange_announcements(
-                    client,
+                    follow_up_client,
                     follow_up_jobs,
                     heartbeat_seconds=args.heartbeat_seconds,
                     max_errors=args.max_errors,
@@ -398,6 +426,85 @@ def fetch_exchange_announcements(
             print(f"[ann heartbeat] progress={idx}/{len(jobs)} rows={len(rows)} errors={len(errors)} elapsed={elapsed}s", flush=True)
             last_heartbeat_at = now
     return normalize_announcement_frame(pd.DataFrame(rows)), errors, ""
+
+
+def fetch_cninfo_announcements_with_exchange_fallback(
+    cninfo_client: object,
+    exchange_client: object,
+    jobs: list[dict[str, object]],
+    *,
+    heartbeat_seconds: int = 20,
+    max_errors: int = 10,
+    retries: int = 3,
+    retry_sleep_seconds: float = 5.0,
+    stop_on_max_errors: bool = False,
+) -> tuple[pd.DataFrame, list[dict[str, str]], str, dict[str, int]]:
+    fresh, errors, remote_skipped_reason = fetch_exchange_announcements(
+        cninfo_client,
+        jobs,
+        heartbeat_seconds=heartbeat_seconds,
+        max_errors=max_errors,
+        retries=retries,
+        retry_sleep_seconds=retry_sleep_seconds,
+        stop_on_max_errors=stop_on_max_errors,
+        source_label="cninfo",
+    )
+    failed_codes = {str(item.get("fund_code") or "").upper() for item in errors if item.get("fund_code")}
+    fallback_jobs = _build_exchange_fallback_jobs_for_empty_windows(jobs, fresh, failed_codes=failed_codes)
+    fallback_fresh = pd.DataFrame()
+    fallback_errors: list[dict[str, str]] = []
+    if fallback_jobs:
+        print(f"[ann] cninfo empty-window fallback via exchange jobs={len(fallback_jobs)}", flush=True)
+        fallback_fresh, fallback_errors, _ = fetch_exchange_announcements(
+            exchange_client,
+            fallback_jobs,
+            heartbeat_seconds=heartbeat_seconds,
+            max_errors=max_errors,
+            retries=retries,
+            retry_sleep_seconds=retry_sleep_seconds,
+            stop_on_max_errors=stop_on_max_errors,
+            source_label="exchange-fallback",
+        )
+        fresh = normalize_announcement_frame(pd.concat([fresh, fallback_fresh], ignore_index=True))
+        errors.extend(fallback_errors)
+    detail = _empty_exchange_fallback_detail()
+    detail["exchange_fallback_jobs"] = int(len(fallback_jobs))
+    detail["exchange_fallback_rows"] = int(len(fallback_fresh))
+    detail["exchange_fallback_errors"] = int(len(fallback_errors))
+    return fresh, errors, remote_skipped_reason, detail
+
+
+def _build_exchange_fallback_jobs_for_empty_windows(
+    jobs: list[dict[str, object]],
+    announcements: pd.DataFrame | None,
+    *,
+    failed_codes: set[str] | None = None,
+) -> list[dict[str, object]]:
+    ann = normalize_announcement_frame(announcements)
+    failed = {str(code or "").upper() for code in (failed_codes or set()) if str(code or "").strip()}
+    fallback_jobs: list[dict[str, object]] = []
+    for job in jobs:
+        fund_code = str(job.get("fund_code") or "").upper()
+        if not fund_code or fund_code in failed:
+            continue
+        start_date = parse_excel_friendly_date(job.get("start_date"))
+        end_date = parse_excel_friendly_date(job.get("end_date"))
+        if pd.isna(start_date) or pd.isna(end_date):
+            continue
+        start_date = pd.Timestamp(start_date).normalize()
+        end_date = pd.Timestamp(end_date).normalize()
+        hits = ann.loc[
+            ann["fund_code"].eq(fund_code)
+            & ann["announcement_date"].ge(start_date)
+            & ann["announcement_date"].le(end_date)
+        ]
+        if hits.empty:
+            fallback_jobs.append({"fund_code": fund_code, "start_date": start_date, "end_date": end_date})
+    return fallback_jobs
+
+
+def _empty_exchange_fallback_detail() -> dict[str, int]:
+    return {"exchange_fallback_jobs": 0, "exchange_fallback_rows": 0, "exchange_fallback_errors": 0}
 
 
 def _sleep_after_exchange_job(client: object) -> None:
@@ -832,6 +939,9 @@ def _print_finish_summary(status: str, stats: dict, outputs: dict[str, Path]) ->
     follow_up_jobs = _as_int(stats.get("liquidation_follow_up_jobs"))
     follow_up_rows = _as_int(stats.get("liquidation_follow_up_rows"))
     follow_up_errors = _as_int(stats.get("liquidation_follow_up_errors"))
+    fallback_jobs = _as_int(stats.get("exchange_fallback_jobs"))
+    fallback_rows = _as_int(stats.get("exchange_fallback_rows"))
+    fallback_errors = _as_int(stats.get("exchange_fallback_errors"))
     parts = [
         f"来源={source}",
         f"新抓公告={_as_int(stats.get('fresh_rows'))}",
@@ -847,6 +957,8 @@ def _print_finish_summary(status: str, stats: dict, outputs: dict[str, Path]) ->
         )
     else:
         parts.append(f"错误={_as_int(stats.get('errors'))}")
+    if fallback_jobs:
+        parts.append(f"交易所兜底={fallback_jobs}任务/{fallback_rows}条/失败{fallback_errors}")
     if follow_up_jobs:
         parts.append(f"清盘后探测={follow_up_jobs}任务/{follow_up_rows}条/失败{follow_up_errors}")
     if pending_rows is not None:
