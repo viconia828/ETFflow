@@ -183,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         window_days=announcement_window_days,
         calendar=calendar,
         min_listing_days=config.lifecycle_high_suspicion_min_listing_days,
+        early_listing_abs_min_pct=config.lifecycle_high_suspicion_early_listing_abs_min_pct,
         integer_ratio_tolerance=config.lifecycle_integer_ratio_tolerance,
         positive_min_pct=config.lifecycle_high_suspicion_positive_min_pct,
         negative_max_pct=config.lifecycle_high_suspicion_negative_max_pct,
@@ -205,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
             window_days=announcement_window_days,
             calendar=calendar,
             min_listing_days=config.lifecycle_high_suspicion_min_listing_days,
+            early_listing_abs_min_pct=config.lifecycle_high_suspicion_early_listing_abs_min_pct,
             integer_ratio_tolerance=config.lifecycle_integer_ratio_tolerance,
             positive_min_pct=config.lifecycle_high_suspicion_positive_min_pct,
             negative_max_pct=config.lifecycle_high_suspicion_negative_max_pct,
@@ -261,6 +263,9 @@ def main(argv: list[str] | None = None) -> int:
             "no_announcement_retry_window_days": int(no_announcement_retry_window_days),
             "auto_confirmed_non_lifecycle_announcement_rows": int(len(auto_confirmations)),
             "high_suspicion_min_listing_days": int(config.lifecycle_high_suspicion_min_listing_days),
+            "high_suspicion_early_listing_abs_min_pct": float(
+                config.lifecycle_high_suspicion_early_listing_abs_min_pct
+            ),
             "integer_ratio_tolerance": float(config.lifecycle_integer_ratio_tolerance),
             "high_suspicion_positive_min_pct": float(config.lifecycle_high_suspicion_positive_min_pct),
             "high_suspicion_negative_max_pct": float(config.lifecycle_high_suspicion_negative_max_pct),

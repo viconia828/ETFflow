@@ -227,6 +227,17 @@ def test_lifecycle_review_plans_split_high_and_low_suspicion() -> None:
     audit = pd.DataFrame(
         [
             {
+                "fund_code": "159327.SZ",
+                "name": "半导体材料设备ETF",
+                "trade_date": "20260106",
+                "prev_trade_date": "20260105",
+                "prev_shares": 70152.4697,
+                "shares": 198457.4091,
+                "share_change": 128304.9394,
+                "share_change_pct": 1.828944,
+                "match_status": "unmatched",
+            },
+            {
                 "fund_code": "510300.SH",
                 "name": "沪深300ETF",
                 "trade_date": "20260106",
@@ -274,6 +285,7 @@ def test_lifecycle_review_plans_split_high_and_low_suspicion() -> None:
     )
     category_map = pd.DataFrame(
         [
+            {"fund_code": "159327.SZ", "category": "科技", "fund_type": "股票型", "list_date": "20200101"},
             {"fund_code": "510300.SH", "category": "宽基", "fund_type": "股票型", "list_date": "20200101"},
             {"fund_code": "511880.SH", "category": "货币", "fund_type": "货币型", "list_date": "20200101"},
             {"fund_code": "588000.SH", "category": "科技", "fund_type": "股票型", "list_date": "20260101"},
@@ -283,12 +295,16 @@ def test_lifecycle_review_plans_split_high_and_low_suspicion() -> None:
 
     high, low = build_lifecycle_review_plans(audit, category_map=category_map, window_days=2)
 
-    assert high["fund_code"].tolist() == ["510300.SH"]
-    assert high.loc[0, "review_layer"] == "high_suspicion"
-    assert "high:positive_integer_ratio" in high.loc[0, "review_reason"]
-    assert set(low["fund_code"]) == {"511880.SH", "588000.SH", "159999.SZ"}
+    assert set(high["fund_code"]) == {"159327.SZ", "510300.SH", "588000.SH"}
+    assert high["review_layer"].eq("high_suspicion").all()
+    assert "high:positive_integer_ratio" in high.loc[high["fund_code"].eq("159327.SZ"), "review_reason"].item()
+    assert "high:positive_integer_ratio" in high.loc[high["fund_code"].eq("510300.SH"), "review_reason"].item()
+    assert (
+        "high:early_listing_abs_change_ge_0.70"
+        in high.loc[high["fund_code"].eq("588000.SH"), "review_reason"].item()
+    )
+    assert set(low["fund_code"]) == {"511880.SH", "159999.SZ"}
     assert low.loc[low["fund_code"].eq("511880.SH"), "review_reason"].item().startswith("low:money_etf_noise")
-    assert "low:listed_less_than_60d" in low.loc[low["fund_code"].eq("588000.SH"), "review_reason"].item()
     assert low.loc[low["fund_code"].eq("159999.SZ"), "review_reason"].item() == "low:ordinary_large_subscription_redemption"
 
 

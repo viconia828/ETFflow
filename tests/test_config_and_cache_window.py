@@ -53,8 +53,9 @@ def test_config_local_cache_start_date_default_and_override(tmp_path) -> None:
     assert default_config.lifecycle_no_announcement_retry_window_days == 10
     assert default_config.lifecycle_min_share_change_pct == 0.50
     assert default_config.lifecycle_high_suspicion_min_listing_days == 60
-    assert default_config.lifecycle_integer_ratio_tolerance == 0.03
-    assert default_config.lifecycle_high_suspicion_positive_min_pct == 2.00
+    assert default_config.lifecycle_high_suspicion_early_listing_abs_min_pct == 0.70
+    assert default_config.lifecycle_integer_ratio_tolerance == 0.20
+    assert default_config.lifecycle_high_suspicion_positive_min_pct == 1.20
     assert default_config.lifecycle_high_suspicion_negative_max_pct == -0.50
 
     config_path = tmp_path / "config.txt"
@@ -79,6 +80,7 @@ def test_config_local_cache_start_date_default_and_override(tmp_path) -> None:
                 "lifecycle_no_announcement_retry_window_days = 12",
                 "lifecycle_min_share_change_pct = 0.25",
                 "lifecycle_high_suspicion_min_listing_days = 90",
+                "lifecycle_high_suspicion_early_listing_abs_min_pct = 0.90",
                 "lifecycle_integer_ratio_tolerance = 0.05",
                 "lifecycle_high_suspicion_positive_min_pct = 3.00",
                 "lifecycle_high_suspicion_negative_max_pct = -0.80",
@@ -106,6 +108,7 @@ def test_config_local_cache_start_date_default_and_override(tmp_path) -> None:
     assert config.lifecycle_no_announcement_retry_window_days == 12
     assert config.lifecycle_min_share_change_pct == 0.25
     assert config.lifecycle_high_suspicion_min_listing_days == 90
+    assert config.lifecycle_high_suspicion_early_listing_abs_min_pct == 0.90
     assert config.lifecycle_integer_ratio_tolerance == 0.05
     assert config.lifecycle_high_suspicion_positive_min_pct == 3.00
     assert config.lifecycle_high_suspicion_negative_max_pct == -0.80

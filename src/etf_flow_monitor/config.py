@@ -32,8 +32,9 @@ class FlowMonitorConfig:
     lifecycle_no_announcement_retry_window_days: int = 10
     lifecycle_min_share_change_pct: float = 0.50
     lifecycle_high_suspicion_min_listing_days: int = 60
-    lifecycle_integer_ratio_tolerance: float = 0.03
-    lifecycle_high_suspicion_positive_min_pct: float = 2.00
+    lifecycle_high_suspicion_early_listing_abs_min_pct: float = 0.70
+    lifecycle_integer_ratio_tolerance: float = 0.20
+    lifecycle_high_suspicion_positive_min_pct: float = 1.20
     lifecycle_high_suspicion_negative_max_pct: float = -0.50
     local_cache_start_date: date = date(2026, 1, 1)
     pages_repo_url: str = ""
@@ -89,8 +90,11 @@ def load_config(path: str | Path | None = None) -> FlowMonitorConfig:
         lifecycle_no_announcement_retry_window_days=int(values.get("lifecycle_no_announcement_retry_window_days", "10")),
         lifecycle_min_share_change_pct=float(values.get("lifecycle_min_share_change_pct", "0.50")),
         lifecycle_high_suspicion_min_listing_days=int(values.get("lifecycle_high_suspicion_min_listing_days", "60")),
-        lifecycle_integer_ratio_tolerance=float(values.get("lifecycle_integer_ratio_tolerance", "0.03")),
-        lifecycle_high_suspicion_positive_min_pct=float(values.get("lifecycle_high_suspicion_positive_min_pct", "2.00")),
+        lifecycle_high_suspicion_early_listing_abs_min_pct=float(
+            values.get("lifecycle_high_suspicion_early_listing_abs_min_pct", "0.70")
+        ),
+        lifecycle_integer_ratio_tolerance=float(values.get("lifecycle_integer_ratio_tolerance", "0.20")),
+        lifecycle_high_suspicion_positive_min_pct=float(values.get("lifecycle_high_suspicion_positive_min_pct", "1.20")),
         lifecycle_high_suspicion_negative_max_pct=float(values.get("lifecycle_high_suspicion_negative_max_pct", "-0.50")),
         local_cache_start_date=normalize_date_input(values.get("local_cache_start_date", "20260101"), field_name="local_cache_start_date"),
         pages_repo_url=values.get("pages_repo_url", "").strip(),

@@ -582,8 +582,9 @@ def build_lifecycle_review_plans(
     window_days: int = 5,
     calendar: TradingCalendar | None = None,
     min_listing_days: int = 60,
-    integer_ratio_tolerance: float = 0.03,
-    positive_min_pct: float = 2.00,
+    early_listing_abs_min_pct: float = 0.70,
+    integer_ratio_tolerance: float = 0.20,
+    positive_min_pct: float = 1.20,
     negative_max_pct: float = -0.50,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     base = _build_lifecycle_review_base(
@@ -592,6 +593,7 @@ def build_lifecycle_review_plans(
         window_days=window_days,
         calendar=calendar,
         min_listing_days=min_listing_days,
+        early_listing_abs_min_pct=early_listing_abs_min_pct,
         integer_ratio_tolerance=integer_ratio_tolerance,
         positive_min_pct=positive_min_pct,
         negative_max_pct=negative_max_pct,
@@ -729,6 +731,7 @@ def _build_lifecycle_review_base(
     window_days: int,
     calendar: TradingCalendar | None,
     min_listing_days: int,
+    early_listing_abs_min_pct: float,
     integer_ratio_tolerance: float,
     positive_min_pct: float,
     negative_max_pct: float,
@@ -778,7 +781,11 @@ def _build_lifecycle_review_base(
     )
     positive_large = working["share_change_pct"].ge(float(positive_min_pct))
     negative_large = working["share_change_pct"].le(float(negative_max_pct))
-    high_mask = ~money_like & ~early_listing & (integer_like | positive_large | negative_large)
+    early_listing_large = early_listing & working["share_change_pct"].abs().ge(
+        max(float(early_listing_abs_min_pct), 0)
+    )
+    established_listing_signal = ~early_listing & (integer_like | positive_large | negative_large)
+    high_mask = ~money_like & (established_listing_signal | early_listing_large)
 
     windows = working["trade_date"].map(lambda value: _announcement_request_window(value, window_days=window_days, calendar=calendar))
     working["request_start_date"] = windows.map(lambda item: item[0])
@@ -790,17 +797,20 @@ def _build_lifecycle_review_base(
             is_high=bool(is_high),
             is_money=bool(is_money),
             is_early=bool(is_early),
+            early_listing_large=bool(is_early_large),
             integer_like=bool(is_integer),
             positive_large=bool(is_positive_large),
             negative_large=bool(is_negative_large),
             min_listing_days=int(min_listing_days),
+            early_listing_abs_min_pct=float(early_listing_abs_min_pct),
             positive_min_pct=float(positive_min_pct),
             negative_max_pct=float(negative_max_pct),
         )
-        for is_high, is_money, is_early, is_integer, is_positive_large, is_negative_large in zip(
+        for is_high, is_money, is_early, is_early_large, is_integer, is_positive_large, is_negative_large in zip(
             high_mask,
             money_like,
             early_listing,
+            early_listing_large,
             integer_like,
             positive_large,
             negative_large,
@@ -831,17 +841,21 @@ def _review_reason(
     is_high: bool,
     is_money: bool,
     is_early: bool,
+    early_listing_large: bool,
     integer_like: bool,
     positive_large: bool,
     negative_large: bool,
     min_listing_days: int,
+    early_listing_abs_min_pct: float,
     positive_min_pct: float,
     negative_max_pct: float,
 ) -> str:
     reasons: list[str] = []
     if is_money:
         reasons.append("low:money_etf_noise")
-    if is_early:
+    if is_early and early_listing_large:
+        reasons.append(f"high:early_listing_abs_change_ge_{early_listing_abs_min_pct:.2f}")
+    elif is_early:
         reasons.append(f"low:listed_less_than_{min_listing_days}d")
     if integer_like:
         reasons.append("high:positive_integer_ratio")
