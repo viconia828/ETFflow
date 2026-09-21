@@ -145,13 +145,19 @@ pages_branch = gh-pages
 
 如果输入日期是非交易日，生成阶段会自动映射到上一交易日；发布阶段也会跟随实际生成的交易日页面。例如输入 `20260619`，实际生成 `outputs/flow_monitor/20260618/` 时，发布归档也会使用 `reports/20260618/`。
 
-发布失败时，BAT 窗口会显示：
+发布脚本会明确打印 `push succeeded` 和提交 SHA，再等待 GitHub Pages 部署确认（默认 120 秒，每 10 秒查询一次）。没有文件变化时也会检查现有提交的部署状态。
+
+如果上传成功，但部署仍在等待或 GitHub API 无法访问，BAT 窗口会显示：
 
 ```text
-[WARN] Pages publish failed. Local dashboard was generated; check network, GitHub SSH, or temp publish directory permissions.
+[WARN] Pages files are on GitHub, but deployment is not confirmed. Check the deployment status or error shown above.
 ```
 
-这只表示线上发布失败，本地 `outputs/flow_monitor/YYYYMMDD/` 下的页面仍然可用。
+这表示暂时无法确认上线，不等于上传失败。超时信息会保留最后一次 API 状态或错误（如 DNS 解析失败、HTTP 403）及 Actions 检查链接。单日或区间报告遇到查询错误或超时，还会读取本次发布的每份线上日报与本地内容比较；只忽略 Git 自动转换的 CRLF/LF 换行差异，全部内容一致才确认这些日报已上线。区间核验最多同时读取 3 份，遇到不匹配或读取失败会停止本轮核验，不会只凭最新一期判断整个区间成功。
+
+脚本使用未认证 GitHub API 查询部署状态，额度按出口 IP 共享，通常为每小时 60 次（见 [GitHub 限流说明](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)）。收到明确限流响应后，本次运行停止 API 轮询，输出服务端给出的恢复时间或重试间隔，并在剩余等待时间内改用线上内容核验；若等待结束仍未全部匹配则返回 `2`，不会把“查询受限”判为“部署失败”。
+
+Git 上传失败或 API 明确返回部署失败时仍显示 `Pages publish failed`，应检查上方具体错误。发布脚本退出码：`0` 为确认成功（或显式跳过检查），`1` 为上传/部署失败，`2` 为文件已在 GitHub、部署未确认。本地 `outputs/flow_monitor/YYYYMMDD/` 下的页面均不受影响。
 
 手动发布指定日期：
 

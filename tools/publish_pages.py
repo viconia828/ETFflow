@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, time as datetime_time, timedelta
 import hashlib
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import time
 from typing import Any, Callable
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener, ProxyHandler
 
@@ -47,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=120.0,
         help="Wait for GitHub Pages deployment after push. Use 0 to skip the check.",
     )
-    parser.add_argument("--deployment-poll-seconds", type=float, default=3.0)
+    parser.add_argument("--deployment-poll-seconds", type=float, default=10.0)
     parser.add_argument("--dry-run", action="store_true", help="Resolve inputs and print intended publish action without git operations.")
     return parser
 
@@ -115,9 +117,9 @@ def main(argv: list[str] | None = None) -> int:
     stage_dashboards(worktree, dashboard_items)
     status = git_output(["git", "status", "--porcelain"], cwd=worktree, env=git_env)
     if not status.strip():
-        print("[pages] no page changes to publish.", flush=True)
-        remove_tree(worktree, ignore_errors=True)
-        return 0
+        print("[pages] no page changes to push; checking existing deployment.", flush=True)
+        commit_sha = git_output(["git", "rev-parse", "HEAD"], cwd=worktree, env=git_env)
+        return confirm_publish(args, remote_url, commit_sha, pages_url, dashboard_items, worktree)
 
     add = run_git(["git", "add", "."], cwd=worktree, env=git_env)
     if add.returncode != 0:
@@ -138,14 +140,36 @@ def main(argv: list[str] | None = None) -> int:
         print(push.stderr.strip(), flush=True)
         return 1
     commit_sha = git_output(["git", "rev-parse", "HEAD"], cwd=worktree, env=git_env)
+    print(f"[pages] push succeeded: commit={commit_sha}", flush=True)
+    return confirm_publish(args, remote_url, commit_sha, pages_url, dashboard_items, worktree)
+
+
+def confirm_publish(
+    args: argparse.Namespace,
+    remote_url: str,
+    commit_sha: str,
+    pages_url: str,
+    dashboard_items: list[tuple[str, Path]],
+    worktree: Path,
+) -> int:
+    verify_online = None
+    if pages_url:
+        expected_dashboards = [
+            (infer_pages_url(remote_url, key, version_token=file_version_token(path)), path.read_bytes())
+            for key, path in dashboard_items
+        ]
+        verify_online = lambda: published_dashboards_state(expected_dashboards)
     deployment_check = wait_for_github_pages_deployment(
         remote_url,
         commit_sha,
         timeout_seconds=args.deployment_timeout_seconds,
         poll_seconds=args.deployment_poll_seconds,
+        verify_online=verify_online,
     )
     if deployment_check.state == "success":
         print("[pages] GitHub Pages deployment succeeded.", flush=True)
+    elif deployment_check.state == "content_verified":
+        print(f"[pages] {deployment_check.message}", flush=True)
     elif deployment_check.state == "skipped":
         print(f"[pages] deployment check skipped: {deployment_check.message}", flush=True)
     elif deployment_check.state in FAILED_DEPLOYMENT_STATES:
@@ -159,9 +183,9 @@ def main(argv: list[str] | None = None) -> int:
         if deployment_check.target_url:
             print(f"[pages] deployment log={deployment_check.target_url}", flush=True)
         remove_tree(worktree, ignore_errors=True)
-        return 1
+        return 2
 
-    print(f"[pages] published {trade_key}.", flush=True)
+    print(f"[pages] published {dashboard_items[-1][0]}.", flush=True)
     if pages_url:
         print(f"[pages] latest={pages_url}", flush=True)
     remove_tree(worktree, ignore_errors=True)
@@ -390,7 +414,7 @@ def infer_pages_url(remote_url: str, trade_key: str, *, version_token: str = "")
 
 
 FAILED_DEPLOYMENT_STATES = {"failure", "error", "cancelled", "timed_out", "action_required", "inactive"}
-PENDING_DEPLOYMENT_STATES = {"", "waiting", "queued", "pending", "in_progress", "requested", "unknown"}
+PENDING_DEPLOYMENT_STATES = {"", "waiting", "queued", "pending", "in_progress", "requested", "unknown", "rate_limited"}
 
 
 @dataclass(frozen=True)
@@ -423,6 +447,86 @@ def github_api_json(url: str, *, timeout_seconds: float = 10.0) -> Any:
     opener = build_opener(ProxyHandler({}))
     with opener.open(request, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def pages_http_bytes(url: str) -> bytes:
+    request = Request(url, headers={"User-Agent": "etf-flow-monitor-pages-publisher", "Cache-Control": "no-cache"})
+    with build_opener(ProxyHandler({})).open(request, timeout=10.0) as response:
+        return response.read()
+
+
+def published_dashboard_state(
+    pages_url: str,
+    expected_content: bytes,
+    *,
+    http_get_bytes: Callable[[str], bytes] = pages_http_bytes,
+) -> DeploymentCheck:
+    actual_content = http_get_bytes(pages_url)
+    # Git core.autocrlf can change CRLF to LF when the dashboard is pushed.
+    if actual_content.replace(b"\r\n", b"\n") != expected_content.replace(b"\r\n", b"\n"):
+        return DeploymentCheck("pending", "Online dashboard content does not match the local report yet")
+    return DeploymentCheck(
+        "content_verified",
+        "Dashboard verified online: content matches the local report; deployment API confirmation unavailable.",
+        environment_url=pages_url,
+    )
+
+
+def published_dashboards_state(
+    expected_dashboards: list[tuple[str, bytes]],
+    *,
+    http_get_bytes: Callable[[str], bytes] = pages_http_bytes,
+) -> DeploymentCheck:
+    if not expected_dashboards:
+        return DeploymentCheck("pending", "No dashboards provided for online verification")
+
+    def check_one(item: tuple[str, bytes]) -> DeploymentCheck:
+        url, content = item
+        try:
+            check = published_dashboard_state(url, content, http_get_bytes=http_get_bytes)
+            if check.state != "content_verified":
+                return DeploymentCheck("pending", f"{url}: {check.message}")
+            return check
+        except Exception as exc:  # noqa: BLE001
+            return DeploymentCheck("pending", f"{url}: Online dashboard check failed: {exc}")
+
+    # Bound simultaneous requests; every report must match, including older dates.
+    matched = 0
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for offset in range(0, len(expected_dashboards), 3):
+            checks = list(pool.map(check_one, expected_dashboards[offset:offset + 3]))
+            failures = [check for check in checks if check.state != "content_verified"]
+            matched += len(checks) - len(failures)
+            if failures:
+                return DeploymentCheck(
+                    "pending",
+                    f"Online dashboards matched {matched}/{len(expected_dashboards)}; {failures[0].message}",
+                )
+    return DeploymentCheck(
+        "content_verified",
+        f"All {matched} dashboard(s) verified online: content matches local reports; deployment API confirmation unavailable.",
+        environment_url=expected_dashboards[-1][0],
+    )
+
+
+def github_rate_limit_message(exc: HTTPError) -> str:
+    headers = exc.headers or {}
+    limited = exc.code == 429 or (
+        exc.code == 403
+        and (headers.get("X-RateLimit-Remaining") == "0" or headers.get("Retry-After") or "rate limit" in str(exc).lower())
+    )
+    if not limited:
+        return ""
+    message = f"GitHub API rate limited: {exc}; API polling stopped for this run"
+    if headers.get("Retry-After"):
+        message += f"; Retry-After={headers['Retry-After']} seconds"
+    reset = headers.get("X-RateLimit-Reset")
+    if reset:
+        try:
+            message += f"; quota resets at {datetime.fromtimestamp(float(reset)).astimezone().isoformat()}"
+        except (ValueError, OverflowError, OSError):
+            pass
+    return message
 
 
 def latest_github_pages_deployment_state(
@@ -473,26 +577,62 @@ def wait_for_github_pages_deployment(
     http_get_json: Callable[[str], Any] = github_api_json,
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
+    verify_online: Callable[[], DeploymentCheck] | None = None,
 ) -> DeploymentCheck:
     if timeout_seconds <= 0:
         return DeploymentCheck("skipped", "deployment wait disabled")
-    if not infer_github_repo_slug(remote_url):
+    slug = infer_github_repo_slug(remote_url)
+    if not slug:
         return DeploymentCheck("skipped", "remote is not a GitHub repository")
 
     deadline = monotonic() + timeout_seconds
     last_check = DeploymentCheck("pending", "waiting for GitHub Pages deployment")
+    checked_online_early = False
+    actions_url = f"https://github.com/{slug[0]}/{slug[1]}/actions"
     while True:
-        try:
-            last_check = latest_github_pages_deployment_state(remote_url, commit_sha, http_get_json=http_get_json)
-        except Exception as exc:  # noqa: BLE001
-            last_check = DeploymentCheck("unknown", f"GitHub Pages deployment check failed: {exc}")
+        if last_check.state != "rate_limited":
+            try:
+                last_check = latest_github_pages_deployment_state(remote_url, commit_sha, http_get_json=http_get_json)
+            except HTTPError as exc:
+                rate_limit_message = github_rate_limit_message(exc)
+                last_check = DeploymentCheck(
+                    "rate_limited" if rate_limit_message else "unknown",
+                    rate_limit_message or f"GitHub Pages deployment check failed: {exc}",
+                    actions_url,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_check = DeploymentCheck("unknown", f"GitHub Pages deployment check failed: {exc}")
         if last_check.state == "success" or last_check.state in FAILED_DEPLOYMENT_STATES:
             return last_check
         if last_check.state not in PENDING_DEPLOYMENT_STATES:
             return last_check
-        if monotonic() >= deadline:
-            return DeploymentCheck("timeout", f"GitHub Pages deployment was not confirmed within {timeout_seconds:g}s")
-        sleep(max(float(poll_seconds), 0.5))
+        timed_out = monotonic() >= deadline
+        online_message = ""
+        if verify_online and (timed_out or last_check.state == "rate_limited" or (last_check.state == "unknown" and not checked_online_early)):
+            checked_online_early = True
+            try:
+                online_check = verify_online()
+                if online_check.state == "content_verified":
+                    return DeploymentCheck(
+                        "content_verified",
+                        f"{online_check.message} Last API state={last_check.state}: {last_check.message}",
+                        environment_url=online_check.environment_url,
+                    )
+                online_message = online_check.message
+            except Exception as exc:  # noqa: BLE001
+                online_message = f"Online dashboard check failed: {exc}"
+        if last_check.state == "rate_limited" and (not verify_online or timed_out or monotonic() >= deadline):
+            message = last_check.message + (f"; {online_message}" if online_message else "")
+            return DeploymentCheck("rate_limited", message, actions_url)
+        if timed_out or monotonic() >= deadline:
+            message = (
+                f"GitHub Pages deployment was not confirmed within {timeout_seconds:g}s; "
+                f"last state={last_check.state}: {last_check.message}"
+            )
+            if online_message:
+                message += f"; {online_message}"
+            return DeploymentCheck("timeout", message, last_check.target_url or actions_url, last_check.environment_url)
+        sleep(min(max(float(poll_seconds), 0.5), max(deadline - monotonic(), 0.0)))
 
 
 def ensure_safe_temp_path(path: Path) -> None:

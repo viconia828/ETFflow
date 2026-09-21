@@ -103,9 +103,13 @@ if defined TRADE_DATE (
 ) else (
     "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\publish_pages.py" --config "%CONFIG_PATH%"
 )
-if errorlevel 1 (
+set "PAGES_EXIT_CODE=%ERRORLEVEL%"
+if "%PAGES_EXIT_CODE%"=="2" (
     echo(
-    echo [WARN] Pages publish failed. Local dashboard was generated; check network, GitHub SSH, or temp publish directory permissions.
+    echo [WARN] Pages files are on GitHub, but deployment is not confirmed. Check the deployment status or error shown above.
+) else if not "%PAGES_EXIT_CODE%"=="0" (
+    echo(
+    echo [WARN] Pages publish failed. Local dashboard was generated; see the specific error above.
 ) else (
     echo(
     echo [OK] Pages publish finished.
@@ -168,9 +172,13 @@ if not "%EXIT_CODE%"=="0" (
 echo(
 echo [3/3] Publishing GitHub Pages for generated range...
 "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\publish_pages.py" --config "%CONFIG_PATH%" --range-start "%RANGE_START%" --range-end "%RANGE_END%"
-if errorlevel 1 (
+set "PAGES_EXIT_CODE=%ERRORLEVEL%"
+if "%PAGES_EXIT_CODE%"=="2" (
     echo(
-    echo [WARN] Pages publish failed. Local dashboards were generated; check network, GitHub SSH, or temp publish directory permissions.
+    echo [WARN] Pages files are on GitHub, but deployment is not confirmed. Check the deployment status or error shown above.
+) else if not "%PAGES_EXIT_CODE%"=="0" (
+    echo(
+    echo [WARN] Pages publish failed. Local dashboards were generated; see the specific error above.
 ) else (
     echo(
     echo [OK] Pages publish finished.
