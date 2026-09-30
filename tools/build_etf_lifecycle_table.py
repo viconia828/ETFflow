@@ -15,12 +15,13 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from etf_flow_monitor.config import load_config  # noqa: E402
+from etf_flow_monitor.config import FlowMonitorConfig, load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import category_map_codes, load_category_map  # noqa: E402
 from etf_flow_monitor.data.cache_store import CacheStore  # noqa: E402
 from etf_flow_monitor.data.lifecycle import (  # noqa: E402
     MATCH_STATUS_MANUAL_CONFIRMED,
     MATCH_STATUS_MATCHED,
+    _announcement_request_window,
     apply_manual_confirmations,
     build_flow_adjustments_from_audit,
     build_lifecycle_review_plans,
@@ -42,10 +43,14 @@ from etf_flow_monitor.data.lifecycle import (  # noqa: E402
     normalize_pending_confirmations,
     prepare_for_csv,
 )
-from etf_flow_monitor.data.schemas import normalize_etf_basic_frame, normalize_etf_share_frame  # noqa: E402
-from etf_flow_monitor.utils.calendar import trading_calendar_from_frame  # noqa: E402
+from etf_flow_monitor.data.schemas import normalize_calendar_frame, normalize_etf_basic_frame, normalize_etf_share_frame  # noqa: E402
+from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource  # noqa: E402
+from etf_flow_monitor.run_ledger import RunLedger, make_log_dir  # noqa: E402
+from etf_flow_monitor.utils.calendar import TradingCalendar, trading_calendar_from_frame  # noqa: E402
 from etf_flow_monitor.utils.io import (
+    clean_excel_text,
     format_tushare_date,
+    merge_frames,
     parse_excel_friendly_date,
     parse_excel_friendly_date_series,
     read_user_csv,
@@ -77,9 +82,32 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
+    ledger = RunLedger(
+        log_dir=make_log_dir(config.output_dir, prefix="lifecycle_audit"),
+        argv=raw_argv,
+        config_path=config_path,
+    )
+    try:
+        result = _run_lifecycle_audit(args, config=config, config_path=config_path, ledger=ledger)
+    except Exception as exc:  # noqa: BLE001
+        ledger.finish(exit_code=1, status="failed", error=str(exc))
+        print(f"[life] 核对失败：{exc}\n[life] 运行记录：{ledger.path}", file=sys.stderr, flush=True)
+        return 1
+    ledger.finish(exit_code=result, status="success")
+    return result
+
+
+def _run_lifecycle_audit(
+    args: argparse.Namespace,
+    *,
+    config: FlowMonitorConfig,
+    config_path: Path,
+    ledger: RunLedger,
+) -> int:
     cache = CacheStore(config.cache_dir)
     basic = normalize_etf_basic_frame(cache.load_static_frame(config.source_name, "etf_basic", config.etf_market))
     category_map = load_category_map(config.category_map_path)
@@ -149,24 +177,20 @@ def main(argv: list[str] | None = None) -> int:
             "flow_adjustment_rows": int(len(existing_flow_adjustments)),
             "status_output": str(status_path),
         }
+        ledger.record_stats(summary)
+        ledger.record_outputs(request_plan=request_plan_path, observation_plan=observation_plan_path)
         _print_lifecycle_summary(summary, verbose=args.verbose)
         return 0
 
-    _ensure_announcement_template(announcement_path)
     existing_events = _manual_lifecycle_events(_read_csv_if_exists(events_path, empty_lifecycle_events()))
     announcements = _read_csv_if_exists(announcement_path, pd.DataFrame())
     manual_confirmations = _read_csv_if_exists(manual_confirmations_path, empty_manual_confirmations())
     pending_confirmations = _read_csv_if_exists(pending_confirmations_path, empty_pending_confirmations())
     pending_confirmations = _drop_pending_confirmations(pending_confirmations, manual_confirmations)
-    _write_csv(pending_confirmations_path, prepare_for_csv(pending_confirmations))
-    calendar_frame = cache.load_calendar(config.source_name, config.calendar_exchange)
-    if calendar_frame is None or calendar_frame.empty:
-        raise RuntimeError(f"official trading calendar cache missing: source={config.source_name} exchange={config.calendar_exchange}")
-    calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
     extracted_events = extract_lifecycle_events_from_announcements(announcements, basic=basic, source_file=announcement_path)
     events = merge_lifecycle_events(existing_events, extracted_events, basic=basic)
-    _write_csv(events_path, prepare_for_csv(events))
 
+    ledger.progress("load_cached_shares", "Building share-jump audit from local cache")
     shares = load_cached_share_cross_sections(
         config.cache_dir,
         config.source_name,
@@ -177,6 +201,14 @@ def main(argv: list[str] | None = None) -> int:
     jumps = detect_share_jumps(shares, basic=basic, min_change_pct=min_share_change_pct)
     audit = match_share_jumps_to_events(jumps, events, match_window_days=args.match_window_days)
     audit = apply_manual_confirmations(audit, manual_confirmations)
+    calendar = _ensure_lifecycle_calendar(
+        audit,
+        config=config,
+        config_path=config_path,
+        window_days=max(announcement_window_days, no_announcement_retry_window_days),
+        ledger=ledger,
+    )
+    ledger.progress("build_review_plans", "Official calendar coverage checked")
     request_plan, observation_plan = build_lifecycle_review_plans(
         audit,
         category_map=category_map_full,
@@ -218,6 +250,9 @@ def main(argv: list[str] | None = None) -> int:
             calendar=calendar,
         )
     flow_adjustments = build_flow_adjustments_from_audit(audit)
+    _ensure_announcement_template(announcement_path)
+    _write_csv(events_path, prepare_for_csv(events))
+    _write_csv(pending_confirmations_path, prepare_for_csv(pending_confirmations))
     _write_csv(request_plan_path, prepare_for_csv(request_plan))
     _write_csv(observation_plan_path, prepare_for_csv(observation_plan))
     _write_csv(flow_adjustments_path, prepare_for_csv(flow_adjustments))
@@ -281,6 +316,14 @@ def main(argv: list[str] | None = None) -> int:
     _write_csv(audit_path, prepare_for_csv(audit))
     write_json(summary_path, summary)
     _write_markdown(markdown_path, summary, audit)
+    ledger.record_stats(summary)
+    ledger.record_outputs(
+        audit=audit_path,
+        summary=summary_path,
+        report=markdown_path,
+        request_plan=request_plan_path,
+        observation_plan=observation_plan_path,
+    )
 
     _print_lifecycle_summary(
         summary,
@@ -291,6 +334,108 @@ def main(argv: list[str] | None = None) -> int:
         verbose=args.verbose,
     )
     return 0
+
+
+def _ensure_lifecycle_calendar(
+    audit: pd.DataFrame,
+    *,
+    config: FlowMonitorConfig,
+    config_path: Path,
+    window_days: int,
+    ledger: RunLedger,
+) -> TradingCalendar | None:
+    """Extend the official cache before shifting normal or retry windows."""
+    if audit.empty:
+        return None
+    resolved = {MATCH_STATUS_MATCHED, MATCH_STATUS_MANUAL_CONFIRMED}
+    unresolved = audit.loc[~audit["match_status"].fillna("").astype(str).isin(resolved)]
+    unresolved = unresolved.loc[unresolved["fund_code"].map(clean_excel_text).ne("")]
+    dates = parse_excel_friendly_date_series(unresolved["trade_date"]).dropna()
+    if dates.empty:
+        return None
+    first, last = pd.Timestamp(dates.min()), pd.Timestamp(dates.max())
+    days = max(int(window_days), 0)
+    cache = CacheStore(config.cache_dir)
+    frame = cache.load_calendar(config.source_name, config.calendar_exchange)
+    calendar = (
+        trading_calendar_from_frame(frame, exchange=config.calendar_exchange)
+        if frame is not None and not frame.empty else None
+    )
+
+    def window_edge(candidate: TradingCalendar | None, base: pd.Timestamp, offset: int):
+        if candidate is None or not candidate.rows[0].cal_date <= base.date() <= candidate.rows[-1].cal_date:
+            return None
+        try:
+            return candidate.shift_trade_date(base.date(), offset)
+        except ValueError:
+            return None
+
+    def covers_windows(candidate: TradingCalendar | None) -> bool:
+        left = window_edge(candidate, first, -days)
+        right = window_edge(candidate, last, days)
+        if left is None or right is None:
+            return False
+        row_count = sum(left <= row.cal_date <= right for row in candidate.rows)
+        return row_count == (right - left).days + 1
+
+    if covers_windows(calendar):
+        return calendar
+
+    # Padding only chooses a query range; actual coverage is checked in official
+    # trading days below. Never estimate open days with a weekday calendar.
+    padding = pd.Timedelta(days=max(40, days * 4))
+    start, end = first - padding, last + padding
+    left = window_edge(calendar, first, -days)
+    right = window_edge(calendar, last, days)
+    if left is not None and right is None:
+        start = last - padding
+    elif left is None and right is not None:
+        end = first + padding
+    cached_range = f"{calendar.rows[0].cal_date}..{calendar.rows[-1].cal_date}" if calendar else "missing"
+    message = (
+        f"official calendar cached={cached_range}; "
+        f"required={first.date()}..{last.date()} +/-{days} trading days; "
+        f"fetch={start.date()}..{end.date()}"
+    )
+    print(f"[life] 日历窗口不足，补取官方交易日历：{message}", flush=True)
+    ledger.progress("refresh_calendar", message)
+    if config.source_name != TushareEtfSource.source_name:
+        raise RuntimeError(f"Cannot refresh official calendar for source={config.source_name}")
+    try:
+        source = TushareEtfSource.from_runtime(
+            cache_dir=config.cache_dir, search_dirs=[str(config_path.parent), str(PROJECT_ROOT)]
+        )
+        if left is not None and right is not None:
+            # An internal gap needs a fresh slice even when min/max dates cover
+            # the range. Keep the existing cache outside that slice.
+            fresh = TushareEtfSource(source.client).get_calendar(start, end, exchange=config.calendar_exchange)
+            frame = merge_frames(
+                normalize_calendar_frame(frame), fresh,
+                key_columns=("exchange", "cal_date"), sort_columns=("exchange", "cal_date"),
+            )
+            cache.save_calendar(config.source_name, config.calendar_exchange, frame)
+        else:
+            source.get_calendar(start, end, exchange=config.calendar_exchange, refresh=False)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Official calendar refresh failed; {message}; {exc}") from exc
+    frame = cache.load_calendar(config.source_name, config.calendar_exchange)
+    calendar = (
+        trading_calendar_from_frame(frame, exchange=config.calendar_exchange)
+        if frame is not None and not frame.empty else None
+    )
+    if not covers_windows(calendar):
+        refreshed_range = f"{calendar.rows[0].cal_date}..{calendar.rows[-1].cal_date}" if calendar else "missing"
+        raise RuntimeError(
+            "Official calendar still does not cover lifecycle windows after refresh: "
+            f"cached={refreshed_range}; {message}. "
+            "Audit stopped; no calendar-day fallback. Retry after official calendar data is available."
+        )
+    ledger.progress(
+        "calendar_ready", "Official calendar cached and trading-day windows verified",
+        calendar_start=str(calendar.rows[0].cal_date), calendar_end=str(calendar.rows[-1].cal_date),
+        window_days=days,
+    )
+    return calendar
 
 
 def _print_lifecycle_summary(
@@ -473,18 +618,8 @@ def _drop_pending_confirmations(pending: pd.DataFrame, confirmations: pd.DataFra
     return normalize_pending_confirmations(pending_frame.loc[keep_mask].copy())
 
 
-def _trading_day_window(value: object, *, window_days: int, calendar: object) -> tuple[pd.Timestamp, pd.Timestamp]:
-    parsed = parse_excel_friendly_date(value)
-    if pd.isna(parsed):
-        return pd.NaT, pd.NaT
-    current = pd.Timestamp(parsed).normalize()
-    days = max(int(window_days), 0)
-    try:
-        start = calendar.shift_trade_date(current.date(), -days)
-        end = calendar.shift_trade_date(current.date(), days)
-        return pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize()
-    except Exception:  # noqa: BLE001
-        return current - pd.Timedelta(days=days), current + pd.Timedelta(days=days)
+def _trading_day_window(value: object, *, window_days: int, calendar: TradingCalendar) -> tuple[pd.Timestamp, pd.Timestamp]:
+    return _announcement_request_window(value, window_days=window_days, calendar=calendar)
 
 
 def _jump_keys(frame: pd.DataFrame) -> pd.Series:

@@ -63,7 +63,11 @@ class TushareEtfSource:
             fields="exchange,cal_date,is_open,pretrade_date",
         )
         fresh = normalize_calendar_frame(rows)
-        merged = merge_frames(cached, fresh, key_columns=("exchange", "cal_date"), sort_columns=("exchange", "cal_date"))
+        # CSV dates are strings while fresh dates are Timestamps. Normalize both
+        # sides so overlapping calendar rows are replaced instead of duplicated.
+        merged = merge_frames(normalize_calendar_frame(cached), fresh, key_columns=("exchange", "cal_date"), sort_columns=("exchange", "cal_date"))
+        if merged.empty:
+            merged = fresh  # Keep CSV headers when the official response is empty.
         if self.cache is not None:
             self.cache.save_calendar(self.source_name, exchange, merged)
         return _filter_date_range(merged, "cal_date", start_key, end_key)
