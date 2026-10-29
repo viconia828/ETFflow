@@ -8,9 +8,11 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+from etf_flow_monitor.data.cache_store import CacheStore
 
 
 CNINFO_FUND_STOCK_URL = "https://www.cninfo.com.cn/new/data/fund_stock.json"
@@ -27,6 +29,7 @@ class CninfoAnnouncementClient:
     page_size: int = 30
     sleep_seconds: float = 1.0
     ignore_proxy: bool = True
+    cache_dir: Path | None = None
     _opener: object = field(init=False, repr=False)
     _fund_stock_by_code: dict[str, dict[str, object]] | None = field(default=None, init=False, repr=False)
 
@@ -67,6 +70,8 @@ class CninfoAnnouncementClient:
                 method="POST",
             )
             parsed = json.loads(self._read_text(request).lstrip("\ufeff"))
+            if not isinstance(parsed, dict) or "announcements" not in parsed:
+                raise RuntimeError("CNINFO response missing announcements; cannot confirm an empty window")
             data = list(parsed.get("announcements") or [])
             rows.extend(normalize_cninfo_rows(data, fallback_fund_code=fund_code))
             total_records = int(parsed.get("totalRecordNum") or len(data) or 0)
@@ -107,7 +112,14 @@ class CninfoAnnouncementClient:
             response_context = urllib.request.urlopen(request, timeout=self.timeout_seconds)
         with response_context as response:
             charset = response.headers.get_content_charset() or "utf-8"
-            return response.read().decode(charset, errors="replace")
+            text = response.read().decode(charset, errors="replace")
+        if self.cache_dir is not None:
+            CacheStore(self.cache_dir).save_source_response(
+                "cninfo", "announcements", "requests",
+                {"url": request.full_url, "body": (request.data or b"").decode("utf-8")},
+                [{"response_text": text}],
+            )
+        return text
 
     def _sleep_between_pages(self) -> None:
         if self.sleep_seconds > 0:

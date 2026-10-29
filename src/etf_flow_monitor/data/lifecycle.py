@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+import numpy as np
 
 from etf_flow_monitor.data.schemas import normalize_etf_basic_frame, normalize_etf_share_frame
 from etf_flow_monitor.utils.calendar import TradingCalendar
@@ -189,6 +190,14 @@ def classify_lifecycle_announcement(text: object) -> tuple[str, str]:
     return "", ""
 
 
+def requires_lifecycle_review(title: object, content: object = "") -> bool:
+    """Meeting titles and risk warnings cannot establish the absence of an event."""
+    text = f"{_clean_text(title)} {_clean_text(content)}"
+    return bool(classify_lifecycle_announcement(text)[0]) or any(
+        marker in text for marker in ("持有人大会", "可能触发基金合同终止")
+    )
+
+
 def extract_lifecycle_events_from_announcements(
     announcements: pd.DataFrame | None,
     *,
@@ -208,6 +217,19 @@ def extract_lifecycle_events_from_announcements(
             continue
         title = _first_text(row, ("title", "ann_title", "公告标题", "公告名称", "name"))
         content = _first_text(row, ("content", "text", "summary", "公告内容", "正文"))
+        # Risk warnings describe conditional future liquidation. Their body may
+        # contain the same keywords as an effective liquidation announcement.
+        if "可能触发基金合同终止" in title or (
+            "提示" in title and not classify_lifecycle_announcement(title)[0]
+            and "可能触发基金合同终止" in content
+        ):
+            continue
+        # A proposal is not an effective liquidation, even if its body mentions
+        # termination. Keep it in the announcement index for explicit review.
+        if "持有人大会" in title and "召开" in title and not any(
+            marker in title for marker in ("表决结果", "决议生效")
+        ):
+            continue
         event_type, keyword = classify_lifecycle_announcement(f"{title} {content}")
         if not event_type:
             continue
@@ -336,6 +358,12 @@ def match_share_jumps_to_events(
             continue
         distance = (candidates["event_date"] - trade_date).abs()
         in_window = candidates.loc[distance.le(window)].copy()
+        # Verified split/conversion dates refer to the actual share registration
+        # day. A nearby ordinary subscription must not be zeroed just because it
+        # falls in the announcement search window.
+        exact_types = in_window["event_type"].isin({"share_split", "share_conversion"})
+        explicit = in_window["event_date_source"].eq("explicit")
+        in_window = in_window.loc[~(exact_types & explicit) | in_window["event_date"].eq(trade_date)]
         if in_window.empty:
             audit.loc[idx, "match_status"] = "unmatched"
             continue
@@ -362,10 +390,17 @@ def apply_manual_confirmations(audit: pd.DataFrame | None, confirmations: pd.Dat
     if confirmed.empty:
         return result[SHARE_JUMP_AUDIT_COLUMNS].reset_index(drop=True)
 
-    confirmed_keys = set(_jump_keys(confirmed))
     audit_keys = _jump_keys(result)
+    confirmed = confirmed.assign(_key=_jump_keys(confirmed)).set_index("_key")
+    valid = pd.Series(True, index=result.index)
+    for column in ("share_change", "share_change_pct"):
+        expected = pd.to_numeric(audit_keys.map(confirmed[column]), errors="coerce")
+        actual = pd.to_numeric(result[column], errors="coerce")
+        valid &= pd.Series(np.isclose(actual.to_numpy(dtype=float, na_value=np.nan),
+                                      expected.to_numpy(dtype=float, na_value=np.nan),
+                                      rtol=1e-9, atol=1e-7), index=result.index)
     matched = result["match_status"].fillna("").astype(str).eq(MATCH_STATUS_MATCHED)
-    manual_mask = audit_keys.isin(confirmed_keys) & ~matched
+    manual_mask = valid & ~matched
     result.loc[manual_mask, "match_status"] = MATCH_STATUS_MANUAL_CONFIRMED
     result.loc[manual_mask, "matched_event_keyword"] = "manual_confirmed"
     result.loc[manual_mask, "matched_event_title"] = "人工确认：未找到需纳入生命周期表的公告"
@@ -527,6 +562,21 @@ def apply_flow_adjustments_to_snapshot(flow: pd.DataFrame | None, adjustments: p
 
     matched_keys = flow_keys.loc[matched]
     matched_adjustments = by_key.loc[matched_keys].reset_index(drop=True)
+    if "share_change" not in result.columns:
+        raise ValueError("Lifecycle adjustments require share_change to validate cached confirmations")
+    actual_change = pd.to_numeric(result.loc[matched, "share_change"], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+    expected_change = pd.to_numeric(matched_adjustments["share_change"], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+    valid = np.isclose(actual_change, expected_change, rtol=1e-9, atol=1e-7)
+    # A fund's first quoted day can have a pre-listing conversion in the share
+    # audit but no quoted previous row. The snapshot already has zero estimated
+    # flow in that case; there is no calculated flow to override.
+    no_estimate = np.isnan(actual_change) & pd.to_numeric(
+        result.loc[matched, "estimated_net_flow"], errors="coerce"
+    ).eq(0).to_numpy()
+    valid |= no_estimate
+    if not valid.all():
+        stale = matched_adjustments.loc[~valid, ["fund_code", "trade_date"]].to_dict("records")
+        raise ValueError(f"Stale lifecycle adjustments after share revision; rerun lifecycle audit: {stale[:10]}")
     raw = pd.to_numeric(result.loc[matched, "estimated_net_flow"], errors="coerce").fillna(0.0)
     result.loc[matched, "estimated_net_flow_adjustment"] = -raw.to_numpy()
     result.loc[matched, "estimated_net_flow"] = 0.0

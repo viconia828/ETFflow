@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
@@ -26,6 +28,7 @@ from etf_flow_monitor.data.lifecycle import (  # noqa: E402
     build_flow_adjustments_from_audit,
     build_lifecycle_review_plans,
     classify_lifecycle_announcement,
+    requires_lifecycle_review,
     detect_share_jumps,
     empty_announcement_request_plan,
     empty_announcement_template,
@@ -148,17 +151,43 @@ def _run_lifecycle_audit(
         end_date=end_date,
     )
     status_updates_enabled = start_date is None
+    reference_paths = {
+        "category_map": config.category_map_path,
+        "announcements": announcement_path,
+        "events": events_path,
+        "manual_confirmations": manual_confirmations_path,
+        "pending_confirmations": pending_confirmations_path,
+        "requests": request_plan_path,
+        "observations": observation_plan_path,
+        "adjustments": flow_adjustments_path,
+    }
+    fingerprint_options = {
+        "source": config.source_name,
+        "exchange": config.calendar_exchange,
+        "market": config.etf_market,
+        "start": str(start_date), "end": str(end_date),
+        "min_share_change_pct": min_share_change_pct,
+        "match_window_days": args.match_window_days,
+        "announcement_window_days": announcement_window_days,
+        "retry_window_days": no_announcement_retry_window_days,
+        **{key: value for key, value in asdict(config).items()
+           if key.startswith("lifecycle_") and not key.endswith("_path")},
+    }
+    def current_fingerprint() -> str:
+        return _audit_fingerprint(config, reference_paths, fingerprint_options)
+
+    input_fingerprint = current_fingerprint()
 
     if (
         status_updates_enabled
         and args.skip_if_current
         and not args.force
         and data_latest_date is not None
-        and _status_is_current(status_path, data_earliest_date=data_earliest_date, data_latest_date=data_latest_date)
+        and _status_is_current(status_path, data_earliest_date=data_earliest_date,
+                               data_latest_date=data_latest_date, input_fingerprint=input_fingerprint)
     ):
-        empty_plan = empty_announcement_request_plan()
-        _write_csv(request_plan_path, prepare_for_csv(empty_plan))
-        _write_csv(observation_plan_path, prepare_for_csv(empty_lifecycle_observation_plan()))
+        # A skipped audit must preserve its previous outputs, including observations.
+        existing_observations = _read_csv_if_exists(observation_plan_path, empty_lifecycle_observation_plan())
         existing_flow_adjustments = _read_csv_if_exists(flow_adjustments_path, empty_flow_adjustments())
         status = _read_status(status_path)
         summary = {
@@ -172,7 +201,7 @@ def _run_lifecycle_audit(
             "request_plan_output": str(request_plan_path),
             "request_plan_rows": 0,
             "observation_plan_output": str(observation_plan_path),
-            "observation_plan_rows": 0,
+            "observation_plan_rows": int(len(existing_observations)),
             "flow_adjustments_output": str(flow_adjustments_path),
             "flow_adjustment_rows": int(len(existing_flow_adjustments)),
             "status_output": str(status_path),
@@ -186,7 +215,6 @@ def _run_lifecycle_audit(
     announcements = _read_csv_if_exists(announcement_path, pd.DataFrame())
     manual_confirmations = _read_csv_if_exists(manual_confirmations_path, empty_manual_confirmations())
     pending_confirmations = _read_csv_if_exists(pending_confirmations_path, empty_pending_confirmations())
-    pending_confirmations = _drop_pending_confirmations(pending_confirmations, manual_confirmations)
     extracted_events = extract_lifecycle_events_from_announcements(announcements, basic=basic, source_file=announcement_path)
     events = merge_lifecycle_events(existing_events, extracted_events, basic=basic)
 
@@ -201,6 +229,9 @@ def _run_lifecycle_audit(
     jumps = detect_share_jumps(shares, basic=basic, min_change_pct=min_share_change_pct)
     audit = match_share_jumps_to_events(jumps, events, match_window_days=args.match_window_days)
     audit = apply_manual_confirmations(audit, manual_confirmations)
+    pending_confirmations = _drop_pending_confirmations(
+        pending_confirmations, audit.loc[audit["match_status"].eq(MATCH_STATUS_MANUAL_CONFIRMED)]
+    )
     calendar = _ensure_lifecycle_calendar(
         audit,
         config=config,
@@ -266,6 +297,7 @@ def _run_lifecycle_audit(
             local_cache_start_date=pd.Timestamp(config.local_cache_start_date).normalize(),
             lifecycle_current=lifecycle_current,
             request_plan_rows=len(request_plan),
+            input_fingerprint=current_fingerprint(),
         )
     else:
         verified_through = str(_read_status(status_path).get("verified_through") or "")
@@ -579,7 +611,7 @@ def _auto_confirm_non_lifecycle_announcement_windows(request_plan: pd.DataFrame,
         if hits.empty:
             continue
         lifecycle_hits = [
-            classify_lifecycle_announcement(f"{hit.get('title', '')} {hit.get('content', '')}")[0]
+            requires_lifecycle_review(hit.get("title", ""), hit.get("content", ""))
             for _, hit in hits.iterrows()
         ]
         if any(lifecycle_hits):
@@ -692,8 +724,11 @@ def _status_is_current(
     *,
     data_earliest_date: pd.Timestamp | None,
     data_latest_date: pd.Timestamp,
+    input_fingerprint: str = "",
 ) -> bool:
     status = _read_status(path)
+    if not input_fingerprint or status.get("input_fingerprint") != input_fingerprint:
+        return False
     if not bool(status.get("lifecycle_current")):
         return False
     if int(status.get("request_plan_rows") or 0) != 0:
@@ -722,8 +757,11 @@ def _update_lifecycle_status(
     local_cache_start_date: pd.Timestamp | None,
     lifecycle_current: bool,
     request_plan_rows: int,
+    input_fingerprint: str = "",
 ) -> str:
     previous = _read_status(path)
+    if previous.get("input_fingerprint") != input_fingerprint:
+        previous = {}
     previous_verified_from = str(previous.get("verified_from") or previous.get("data_earliest_date") or "")
     previous_verified = str(previous.get("verified_through") or "")
     verified_from = (
@@ -733,7 +771,8 @@ def _update_lifecycle_status(
     )
     verified_through = format_tushare_date(data_latest_date) if lifecycle_current and data_latest_date is not None else previous_verified
     status = {
-        "schema_version": "etf_lifecycle_status_v1",
+        "schema_version": "etf_lifecycle_status_v2",
+        "input_fingerprint": input_fingerprint,
         "data_earliest_date": format_tushare_date(data_earliest_date) if data_earliest_date is not None else "",
         "data_latest_date": format_tushare_date(data_latest_date) if data_latest_date is not None else "",
         "verified_from": verified_from,
@@ -745,6 +784,33 @@ def _update_lifecycle_status(
     }
     write_json(path, status)
     return verified_through
+
+
+def _audit_fingerprint(config: FlowMonitorConfig, references: dict[str, Path], options: dict) -> str:
+    """Hash contents, not mtimes/date bounds, so same-day cache revisions invalidate audits.
+
+    Outputs are included to detect lost/edited observations and adjustments. Logical
+    labels and normalized newlines keep the fingerprint independent of checkout path.
+    """
+    source_dir = config.cache_dir / config.source_name
+    paths = dict(references)
+    paths["basic"] = source_dir / "static" / f"etf_basic_{config.etf_market}.csv"
+    paths["calendar"] = source_dir / "calendar" / f"{config.calendar_exchange.upper()}.csv"
+    for path in sorted((source_dir / "daily_cross_section" / "etf_share").glob("*.csv")):
+        if len(path.stem) == 8 and path.stem.isdigit():
+            paths[f"shares/{path.name}"] = path
+    paths["audit_logic"] = Path(__file__)
+    paths["lifecycle_logic"] = SRC_DIR / "etf_flow_monitor" / "data" / "lifecycle.py"
+    digests = {}
+    for key, path in sorted(paths.items()):
+        path = Path(path)
+        if not path.is_file():
+            digests[key] = "missing"
+            continue
+        content = path.read_bytes().removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n")
+        digests[key] = hashlib.sha256(content).hexdigest()
+    payload = {"version": 2, "files": digests, "options": options}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
 def _parse_optional_date(value: str | None) -> pd.Timestamp | None:

@@ -261,7 +261,7 @@ ETF公告更新.bat
 这个 BAT 是重任务入口，不会被日常 `资金流监控.bat` 调用。它会按下面顺序运行：
 
 1. 检查上一轮“窗口内未抓到公告”的跳变是否已经人工确认。
-2. 检查生命周期状态是否已经覆盖到本地份额数据日期；如未覆盖，先审计本地份额跳变，并拆成高疑似待抓清单和低疑似观察清单。
+2. 检查生命周期状态的日期覆盖及内容指纹；份额缓存、公告、确认、审计产物、参数或审计程序发生变化时重新核对，并拆成高疑似待抓清单和低疑似观察清单。即使日期相同，缓存修订也会使旧状态失效；真正跳过时保留原观察表及其他产物。
 3. 按高疑似待抓清单从巨潮资讯抓取基金公告，填入 `etf_announcements.csv`。
 4. 用新公告重建生命周期事件表和本地份额跳变核对报告。
 
@@ -278,7 +278,14 @@ data/local_reference/etf_lifecycle_pending_confirmations.csv
 data/local_reference/etf_lifecycle_manual_confirmations.csv
 data/local_reference/etf_lifecycle_flow_adjustments.csv
 data/local_reference/etf_lifecycle_status.json
+data/local_reference/etf_lifecycle_review_evidence.csv
 ```
+
+状态格式为 `etf_lifecycle_status_v2`。确认记录只有在代码、相邻日期、份额变动及比例均与当前缓存一致时才生效；数值过时的确认不能消除新待查项。报表发现已匹配的资金流修正与当前份额变动不一致时会停止，需重新运行生命周期核对。上市首日缺少前一报价且原估算已经为零的情况保留事件标记。
+
+公告客户端把原始响应缓存到 `data/cache/cninfo/raw/announcements/` 和 `data/cache/exchange/raw/announcements/`，错误响应不能当作“没有公告”。核实记录表保存复核结论、官方来源链接和证据校验值；原始检索响应留在本地。
+
+核实记录表中，`split_date` 行的 `evidence_sha256` 校验官方 PDF；`pending_jump` 行校验所列窗口的两源原始查询响应，多个值以 ` | ` 分隔。本次本地证据保存在 `outputs/logs/lifecycle_repair_20261029/evidence/`。
 
 公告下载主源和审计参数可在 `config.txt` 中修改：
 
@@ -305,7 +312,7 @@ lifecycle_high_suspicion_negative_max_pct = -0.50
 
 自动抓取公告只处理高疑似跳变：排除货币 ETF、排除上市未满 60 天的跳变，保留正向整数倍跳变、正向变化达到 200% 及以上的跳变、或负向变化达到 -50% 及以下的跳变。其他跳变会写入 `etf_lifecycle_observation_jumps.csv`，只做本地观察，不自动抓公告。
 
-公告解析只关心会影响资金流估算的生命周期事件，例如份额拆分、份额折算、转型、合并、清盘。季度报告、流动性服务商公告、净值低于 5000 万提示、溢价风险提示等不会进入生命周期事件表；如果这些公告出现在跳变窗口内，程序会自动把该跳变确认成“无资金流生命周期事件”。
+公告解析只关心会影响资金流估算的生命周期事件，例如份额拆分、份额折算、转型、合并、清盘。仅含季度报告、流动性服务商公告等普通事项的窗口可自动确认；持有人大会通知和可能触发终止的预警须继续核实，不能仅凭标题认定无事件。拟议清算不等于已生效清算，拆分登记日也不一定等于除权日或公告日；已核实的拆分/折算日期只匹配该日的份额跳变。
 
 如果某个跳变窗口内完全没有抓到公告，BAT 不再要求你手工确认。下一轮会自动扩大到 `lifecycle_no_announcement_retry_window_days` 设置的交易日窗口重新抓取；如果扩大窗口后仍然没有公告，程序会自动确认该跳变无生命周期事件。
 

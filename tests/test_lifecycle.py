@@ -94,16 +94,19 @@ def test_lifecycle_status_invalidates_when_cached_start_moves_earlier(tmp_path) 
         local_cache_start_date=pd.Timestamp("2024-01-01"),
         lifecycle_current=True,
         request_plan_rows=0,
+        input_fingerprint="test-fingerprint",
     )
     assert _status_is_current(
         status_path,
         data_earliest_date=pd.Timestamp("2024-01-01"),
         data_latest_date=pd.Timestamp("2026-06-26"),
+        input_fingerprint="test-fingerprint",
     )
     assert not _status_is_current(
         status_path,
         data_earliest_date=pd.Timestamp("2023-01-03"),
         data_latest_date=pd.Timestamp("2026-06-26"),
+        input_fingerprint="test-fingerprint",
     )
 
 
@@ -610,6 +613,7 @@ def test_flow_adjustments_zero_matched_lifecycle_net_flow() -> None:
                 "fund_code": "510300.SH",
                 "trade_date": "20260106",
                 "estimated_net_flow": 100_000_000.0,
+                "share_change": 1000.0,
                 "flow_direction": "inflow",
             }
         ]

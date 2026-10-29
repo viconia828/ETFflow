@@ -23,6 +23,7 @@ from etf_flow_monitor.data.exchange_announcements import ExchangeAnnouncementCli
 from etf_flow_monitor.data.lifecycle import (  # noqa: E402
     MANUAL_CONFIRMATION_COLUMNS,
     classify_lifecycle_announcement,
+    requires_lifecycle_review,
     empty_announcement_template,
     empty_manual_confirmations,
     empty_pending_confirmations,
@@ -131,12 +132,14 @@ def main(argv: list[str] | None = None) -> int:
                     page_size=args.exchange_page_size,
                     sleep_seconds=sleep_seconds,
                     ignore_proxy=True,
+                    cache_dir=config.cache_dir,
                 )
                 if source_name == "cninfo"
                 else ExchangeAnnouncementClient(
                     page_size=args.exchange_page_size,
                     sleep_seconds=sleep_seconds,
                     ignore_proxy=True,
+                    cache_dir=config.cache_dir,
                 )
             )
             exchange_fallback_client = (
@@ -144,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
                     page_size=args.exchange_page_size,
                     sleep_seconds=sleep_seconds,
                     ignore_proxy=True,
+                    cache_dir=config.cache_dir,
                 )
                 if source_name == "cninfo"
                 else None
@@ -837,8 +841,7 @@ def build_auto_confirmations_from_retried_windows(
         ].copy()
         lifecycle_hit = False
         for _, hit in hits.iterrows():
-            event_type, _ = classify_lifecycle_announcement(f"{hit.get('title', '')} {hit.get('content', '')}")
-            if event_type:
+            if requires_lifecycle_review(hit.get("title", ""), hit.get("content", "")):
                 lifecycle_hit = True
                 break
         if lifecycle_hit:

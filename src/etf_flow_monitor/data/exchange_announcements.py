@@ -9,9 +9,11 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+from etf_flow_monitor.data.cache_store import CacheStore
 
 
 SSE_ANNOUNCEMENT_URL = "https://query.sse.com.cn/commonQuery.do"
@@ -31,6 +33,7 @@ class ExchangeAnnouncementClient:
     page_size: int = 50
     sleep_seconds: float = 1.0
     ignore_proxy: bool = True
+    cache_dir: Path | None = None
     _opener: object = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -75,6 +78,8 @@ class ExchangeAnnouncementClient:
             url = f"{SSE_ANNOUNCEMENT_URL}?{urllib.parse.urlencode(payload)}"
             request = urllib.request.Request(url, headers=_sse_headers(), method="GET")
             parsed = _parse_json_or_jsonp(self._read_text(request))
+            if "result" not in parsed and "data" not in (parsed.get("pageHelp") or {}):
+                raise RuntimeError("SSE response missing result; cannot confirm an empty window")
             data = list(parsed.get("result") or parsed.get("pageHelp", {}).get("data") or [])
             rows.extend(normalize_sse_rows(data, fallback_fund_code=fund_code))
             page_count = int((parsed.get("pageHelp") or {}).get("pageCount") or 0)
@@ -103,6 +108,8 @@ class ExchangeAnnouncementClient:
                 method="POST",
             )
             parsed = json.loads(self._read_text(request).lstrip("\ufeff"))
+            if not isinstance(parsed, dict) or "data" not in parsed:
+                raise RuntimeError("SZSE response missing data; cannot confirm an empty window")
             data = list(parsed.get("data") or [])
             rows.extend(normalize_szse_rows(data, fallback_fund_code=fund_code))
             total = int(parsed.get("announceCount") or parsed.get("recordCount") or len(data) or 0)
@@ -119,7 +126,14 @@ class ExchangeAnnouncementClient:
             response_context = urllib.request.urlopen(request, timeout=self.timeout_seconds)
         with response_context as response:
             charset = response.headers.get_content_charset() or "utf-8"
-            return response.read().decode(charset, errors="replace")
+            text = response.read().decode(charset, errors="replace")
+        if self.cache_dir is not None:
+            CacheStore(self.cache_dir).save_source_response(
+                "exchange", "announcements", "requests",
+                {"url": request.full_url, "body": (request.data or b"").decode("utf-8")},
+                [{"response_text": text}],
+            )
+        return text
 
     def _sleep_between_pages(self) -> None:
         if self.sleep_seconds > 0:
