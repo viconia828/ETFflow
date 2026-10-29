@@ -93,7 +93,7 @@ def _render_document(
     note_lines = [str(item).strip() for item in notes if str(item).strip()]
     if not note_lines:
         note_lines = [
-            "金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。",
+            "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
             "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
         ]
     if DIRECTION_NOTE not in note_lines:

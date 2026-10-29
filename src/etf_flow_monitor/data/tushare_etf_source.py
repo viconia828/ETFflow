@@ -7,7 +7,9 @@ from pathlib import Path
 import pandas as pd
 
 from etf_flow_monitor.data.cache_store import CacheStore
+from etf_flow_monitor.data.share_units import load_share_overrides, normalize_fetched_shares
 from etf_flow_monitor.data.schemas import (
+    ACTUAL_SHARE_UNIT,
     normalize_calendar_frame,
     normalize_etf_basic_frame,
     normalize_etf_daily_frame,
@@ -29,6 +31,36 @@ class TushareEtfSource:
     def __init__(self, client: TushareHttpClient | None, cache: CacheStore | None = None) -> None:
         self.client = client
         self.cache = cache
+        self._share_overrides = None
+
+    def _share_frame(self, rows: list[dict], *, key: str, params: dict) -> pd.DataFrame:
+        if self.cache is not None:
+            self.cache.save_source_response(self.source_name, "fund_share", key, params, rows)
+        if self._share_overrides is None:
+            path = (self.cache.reference_dir if self.cache else Path("data/local_reference")) / "etf_share_verified_overrides.csv"
+            self._share_overrides = load_share_overrides(path)
+        return normalize_fetched_shares(rows, self._share_overrides, request=params)
+
+    def _query_share_rows(self, params: dict) -> list[dict]:
+        rows = self.client.query("fund_share", params=params, fields="ts_code,trade_date,fd_share")
+        if len(rows) < 2000:
+            return rows
+        if self.cache is not None:
+            self.cache.save_source_response(self.source_name, "fund_share", str(params.get("trade_date", "capped")), params, rows)
+        if "trade_date" not in params or "ts_code" in params:
+            raise IncompleteMarketCoverageError("fund_share hit 2000-row cap; narrow the requested time range")
+        # Quarter-end responses also contain many OTC funds. Documented market
+        # filters recover all listed funds instead of accepting the first 2000.
+        result: list[dict] = []
+        for market in ("SH", "SZ"):
+            part_params = {**params, "market": market}
+            part = self.client.query("fund_share", params=part_params, fields="ts_code,trade_date,fd_share")
+            if self.cache is not None:
+                self.cache.save_source_response(self.source_name, "fund_share", str(params["trade_date"]) + "_" + market, part_params, part)
+            if not part or len(part) >= 2000 or any(not str(row.get("ts_code", "")).endswith("." + market) for row in part):
+                raise IncompleteMarketCoverageError(f"fund_share incomplete market {market}: {params}")
+            result.extend(part)
+        return result
 
     @classmethod
     def from_runtime(cls, *, cache_dir: str | Path = "data/cache", search_dirs: list[str] | None = None) -> "TushareEtfSource":
@@ -162,15 +194,15 @@ class TushareEtfSource:
         end_key = pd.Timestamp(end_date).normalize()
         for code in _unique_codes(codes):
             cached = None if refresh or self.cache is None else self.cache.load_time_series(self.source_name, "etf_share", code)
+            if cached is not None:
+                cached = normalize_etf_share_frame(cached)
+                if not cached["share_unit"].eq(ACTUAL_SHARE_UNIT).all():
+                    cached = None
             if _covers_date_range(cached, "trade_date", start_key, end_key):
                 frames.append(_filter_date_range(cached, "trade_date", start_key, end_key))
                 continue
-            rows = self.client.query(
-                "fund_share",
-                params={"ts_code": code, "start_date": format_tushare_date(start_key), "end_date": format_tushare_date(end_key)},
-                fields="ts_code,trade_date,fd_share",
-            )
-            fresh = normalize_etf_share_frame(pd.DataFrame(rows).assign(source="tushare:fund_share"))
+            rows = self._query_share_rows({"ts_code": code, "start_date": format_tushare_date(start_key), "end_date": format_tushare_date(end_key)})
+            fresh = self._share_frame(rows, key=code, params={"ts_code": code, "start_date": format_tushare_date(start_key), "end_date": format_tushare_date(end_key)})
             merged = merge_frames(cached, fresh, key_columns=("fund_code", "trade_date"), sort_columns=("fund_code", "trade_date"))
             if self.cache is not None:
                 self.cache.save_time_series(self.source_name, "etf_share", code, merged)
@@ -196,16 +228,16 @@ class TushareEtfSource:
                 if refresh or self.cache is None
                 else self.cache.load_daily_cross_section(self.source_name, "etf_share", trade_date, columns=columns)
             )
+            if cached is not None and not cache_only:
+                normalized = normalize_etf_share_frame(cached)
+                if not normalized["share_unit"].eq(ACTUAL_SHARE_UNIT).all():
+                    cached = None
             if cached is None:
                 if cache_only:
                     frames.append(normalize_etf_share_frame(None))
                     continue
-                rows = self.client.query(
-                    "fund_share",
-                    params={"trade_date": trade_date},
-                    fields="ts_code,trade_date,fd_share",
-                )
-                frame = normalize_etf_share_frame(pd.DataFrame(rows).assign(source="tushare:fund_share"))
+                rows = self._query_share_rows({"trade_date": trade_date})
+                frame = self._share_frame(rows, key=trade_date, params={"trade_date": trade_date})
                 _validate_daily_market_coverage(frame, code_set, dataset_name='fund_share', trade_date=trade_date)
                 if self.cache is not None:
                     self.cache.save_daily_cross_section(self.source_name, "etf_share", trade_date, frame)

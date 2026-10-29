@@ -39,7 +39,10 @@ ETF_SHARE_COLUMNS = [
     "trade_date",
     "shares",
     "source",
+    "share_unit",
 ]
+
+ACTUAL_SHARE_UNIT = "listed_shares_10k_v1"
 
 ETF_FLOW_COLUMNS = [
     "fund_code",
@@ -55,6 +58,7 @@ ETF_FLOW_COLUMNS = [
     "estimated_net_flow",
     "flow_direction",
     "source",
+    "share_unit",
 ]
 
 
@@ -126,6 +130,7 @@ def normalize_etf_share_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
     result["trade_date"] = _to_date_series(result["trade_date"])
     result["shares"] = pd.to_numeric(result["shares"], errors="coerce")
     result["source"] = result["source"].fillna("unknown").astype("string")
+    result["share_unit"] = result["share_unit"].fillna("unknown").astype("string")
     return (
         result[result["fund_code"].fillna("").ne("") & result["trade_date"].notna()]
         .drop_duplicates(subset=["fund_code", "trade_date"], keep="last")

@@ -26,6 +26,7 @@ from etf_flow_monitor.utils.calendar import (  # noqa: E402
     trading_calendar_from_frame,
 )
 from etf_flow_monitor.utils.io import format_tushare_date  # noqa: E402
+from etf_flow_monitor.run_ledger import RunLedger, make_log_dir  # noqa: E402
 
 
 INCOMPLETE_MARKET_COVERAGE_EXIT_CODE = 2
@@ -39,10 +40,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--heartbeat-seconds", type=int, default=15)
     parser.add_argument("--refresh", action="store_true", help="Refresh all target dates even when cache files exist.")
     parser.add_argument("--full-check", action="store_true", help="Scan every required trading date instead of using the fast interval check.")
+    parser.add_argument("--recent-share-days", type=int, default=5, help="Re-fetch the last N official trading dates, including existing share files (default 5).")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
+    config = load_config(Path(args.config).resolve())
+    ledger = RunLedger(log_dir=make_log_dir(config.output_dir, prefix="cache_update"), argv=raw_argv, config_path=Path(args.config).resolve())
+    try:
+        result = _update(raw_argv, ledger)
+        ledger.finish(exit_code=result, status="success" if result == 0 else "failed")
+        return result
+    except Exception as exc:
+        ledger.finish(exit_code=1, status="failed", error=str(exc))
+        print(f"[cache] failed: {exc}", file=sys.stderr, flush=True)
+        return 1
+
+
+def _update(argv: list[str], ledger: RunLedger) -> int:
     args = build_parser().parse_args(argv)
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
@@ -65,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         calendar_frame = source.get_calendar(calendar_start, calendar_end, exchange=config.calendar_exchange, refresh=False)
     except Exception as exc:  # noqa: BLE001
         _print_update_failure(config.cache_dir, source.source_name, exc)
-        return 0
+        ledger.progress("calendar_failed", str(exc))
+        return 1
     calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
     if str(args.trade_date or "").strip():
         resolved_date, calendar_mode = resolve_monitor_market_date(
@@ -109,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         trade_dates=trade_dates,
         refresh=args.refresh,
         full_check=args.full_check,
+        recent_share_days=max(args.recent_share_days, 0),
     )
     print(f"[cache] check_mode={check_mode}", flush=True)
     total_missing = len(missing_daily) + len(missing_share)
@@ -116,14 +135,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[cache] 已更新至最新 {target_key}，开始生成页面。", flush=True)
         return 0
 
-    print(f"[cache] 未更新至最新 {target_key}，正在更新：daily 缺 {len(missing_daily)} 天，share 缺 {len(missing_share)} 天。", flush=True)
+    print(f"[cache] 正在更新：daily {len(missing_daily)} 天，share {len(missing_share)} 天（含近期回查）。", flush=True)
+    ledger.record_stats({"daily_dates": len(missing_daily), "share_dates": len(missing_share), "recent_share_days": args.recent_share_days, "mode": check_mode})
     category_map = load_category_map(config.category_map_path)
     category_codes = category_map_codes(category_map)
     try:
         basic = source.get_etf_basic(market=config.etf_market, refresh=False)
     except Exception as exc:  # noqa: BLE001
         _print_update_failure(config.cache_dir, source.source_name, exc)
-        return 0
+        ledger.progress("basic_failed", str(exc))
+        return 1
     basic_codes = set(basic["fund_code"].dropna().astype(str).str.upper().tolist()) if "fund_code" in basic.columns else set()
     codes = [code for code in category_codes if code in basic_codes] if category_codes else sorted(basic_codes)
     state = _HeartbeatState(total=total_missing)
@@ -132,22 +153,26 @@ def main(argv: list[str] | None = None) -> int:
     heartbeat.start()
     try:
         for trade_date in missing_daily:
+            ledger.progress("fund_daily", format_tushare_date(trade_date), done=state.done, total=state.total)
             state.stage = "fund_daily"
             state.trade_date = trade_date
             source.get_etf_daily_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
         for trade_date in missing_share:
+            ledger.progress("fund_share", format_tushare_date(trade_date), done=state.done, total=state.total)
             state.stage = "fund_share"
             state.trade_date = trade_date
             source.get_etf_share_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
     except IncompleteMarketCoverageError as exc:
+        ledger.progress("incomplete_source", str(exc))
         print('[cache] daily cross-section incomplete: ' + str(exc), flush=True)
         print('[cache] no incomplete cache file was written; BAT will skip report generation for this run.', flush=True)
         return INCOMPLETE_MARKET_COVERAGE_EXIT_CODE
     except Exception as exc:  # noqa: BLE001
         _print_update_failure(config.cache_dir, source.source_name, exc)
-        return 0
+        ledger.progress("source_failed", str(exc))
+        return 1
     finally:
         heartbeat.stop()
     print(f"[cache] 更新完成：target={target_key} total_updated={state.done}/{state.total}", flush=True)
@@ -228,18 +253,22 @@ def _missing_dates_for_update(
     trade_dates: list[pd.Timestamp],
     refresh: bool,
     full_check: bool,
+    recent_share_days: int = 0,
 ) -> tuple[list[pd.Timestamp], list[pd.Timestamp], str]:
     if refresh:
-        candidates = list(trade_dates)
-        mode = "refresh_all"
+        return list(trade_dates), list(trade_dates), "refresh_all"
     elif full_check:
         candidates = list(trade_dates)
         mode = "full_check"
     else:
         candidates, mode = _fast_missing_candidate_dates(daily_keys, share_keys, trade_dates)
 
-    missing_daily = [trade_date for trade_date in candidates if format_tushare_date(trade_date) not in daily_keys]
-    missing_share = [trade_date for trade_date in candidates if format_tushare_date(trade_date) not in share_keys]
+    # File-key membership is cheap; also catch holes inside the cached interval.
+    missing_daily = [trade_date for trade_date in trade_dates if format_tushare_date(trade_date) not in daily_keys]
+    missing_share = [trade_date for trade_date in trade_dates if format_tushare_date(trade_date) not in share_keys]
+    if recent_share_days > 0:
+        missing_share = sorted(set(missing_share) | set(trade_dates[-recent_share_days:]))
+        mode += "+recent_share_refresh"
     return missing_daily, missing_share, mode
 
 
@@ -338,7 +367,7 @@ def _print_update_failure(cache_dir: Path, source_name: str, exc: Exception) -> 
         interval = f"none（daily 截至 {daily_end or 'none'}，share 截至 {share_end or 'none'}）"
     print(f"[cache] 更新失败：{exc}", flush=True)
     print(f"[cache] 本地完整缓存区间：{interval}", flush=True)
-    print("[cache] 将继续尝试使用本地缓存生成；超出本地统计区间的报表会跳过。", flush=True)
+    print("[cache] 本次停止；源数据刷新失败时不继续生成或发布旧口径报表。", flush=True)
 
 
 class _HeartbeatState:

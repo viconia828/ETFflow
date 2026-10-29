@@ -205,7 +205,7 @@ class LifecycleCalendarTests(unittest.TestCase):
             result, ledger = self.run_main()
         self.assertEqual(result, 1)
         self.assertEqual(ledger["status"], "failed")
-        self.assertEqual(ledger["last_stage"], "refresh_calendar")
+        self.assertEqual(ledger["last_stage"], "refresh_calendar", ledger.get("error"))
         self.assertIn("rate limit exceeded", ledger["error"])
         for path, content in preserved.items():
             self.assertEqual(path.read_bytes(), content)

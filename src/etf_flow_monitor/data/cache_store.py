@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable
+import os
+import tempfile
+import time
 
 import pandas as pd
 
@@ -20,6 +23,11 @@ class CacheStore:
 
     def snapshot_stats(self) -> dict[str, int]:
         return dict(self.stats)
+
+    def save_source_response(self, source_name: str, api_name: str, key: str, params: dict, rows: list[dict]) -> None:
+        path = self.base_dir / source_name / "raw" / api_name / safe_filename(key) / f"{time.time_ns()}.json"
+        write_json(path, {"api": api_name, "params": params, "received_at_ns": time.time_ns(), "rows": rows})
+        self._record("raw_response_writes")
 
     def load_calendar(self, source_name: str, exchange: str) -> pd.DataFrame | None:
         return self._load_csv(self.base_dir / source_name / "calendar" / f"{exchange.upper()}.csv")
@@ -92,7 +100,15 @@ class CacheStore:
 
     def _save_csv(self, path: Path, frame: pd.DataFrame) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_csv(path, index=False, encoding="utf-8-sig")
+        # Interrupted refreshes must leave the previous complete file intact.
+        fd, temporary = tempfile.mkstemp(prefix=path.stem + "_", suffix=".tmp", dir=path.parent)
+        os.close(fd)
+        try:
+            frame.to_csv(temporary, index=False, encoding="utf-8-sig")
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
         self._record("file_writes")
 
     def _record(self, key: str, count: int = 1) -> None:

@@ -12,7 +12,8 @@ from etf_flow_monitor.config import load_config
 from etf_flow_monitor.data.category_map import apply_category_map, category_map_codes, category_map_stats, load_category_map
 from etf_flow_monitor.data.cross_border_fill import fill_cross_border_previous_values
 from etf_flow_monitor.data.lifecycle import apply_flow_adjustments_to_snapshot
-from etf_flow_monitor.data.tushare_etf_source import TushareEtfSource
+from etf_flow_monitor.data.tushare_etf_source import IncompleteMarketCoverageError, TushareEtfSource
+from etf_flow_monitor.data.share_units import ShareDataQualityError
 from etf_flow_monitor.monitor.flow_metrics import (
     TUSHARE_DAILY_AMOUNT_UNIT_MULTIPLIER,
     TUSHARE_FD_SHARE_UNIT_MULTIPLIER,
@@ -38,7 +39,7 @@ from etf_flow_monitor.utils.io import (
 from etf_flow_monitor.utils.logger import configure_logging
 
 DAILY_REPORT_COLUMNS = ["fund_code", "trade_date", "close", "pct_change", "volume", "amount"]
-SHARE_REPORT_COLUMNS = ["fund_code", "trade_date", "shares", "source"]
+SHARE_REPORT_COLUMNS = ["fund_code", "trade_date", "shares", "source", "share_unit"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,7 +155,13 @@ def main(argv: list[str] | None = None) -> int:
             daily = pd.DataFrame()
             shares = pd.DataFrame()
         else:
-            fetch_trade_dates = _open_trade_dates(calendar_frame, start_date, trade_date)
+            fetch_start = _source_warmup_start_date(
+                calendar_frame, start_date,
+                cache_dir=config.cache_dir if args.cache_only else None,
+                source_name=source.source_name,
+            )
+            fetch_trade_dates = _open_trade_dates(calendar_frame, fetch_start, trade_date)
+            run_stats["source_warmup_start"] = fetch_start.strftime("%Y-%m-%d")
             if args.cache_only:
                 coverage_message = _cache_coverage_error(config.cache_dir, source.source_name, fetch_trade_dates, trade_date)
                 if coverage_message:
@@ -187,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
                     return _finish_skipped(ledger, run_stats, f"本地行情缓存读取失败：{exc}")
                 ledger.progress("daily_cross_section_unavailable", str(exc))
                 run_stats["fetch_shape"] = "per_code_time_series_fallback"
-                daily = source.get_etf_daily(codes, start_date, trade_date, refresh=args.refresh)
+                daily = source.get_etf_daily(codes, fetch_start, trade_date, refresh=args.refresh)
             try:
                 if run_stats.get("fetch_shape") == "daily_cross_section":
                     try:
@@ -198,13 +205,17 @@ def main(argv: list[str] | None = None) -> int:
                             cache_only=args.cache_only,
                             columns=SHARE_REPORT_COLUMNS,
                         )
+                    except (IncompleteMarketCoverageError, ShareDataQualityError):
+                        raise
                     except Exception as exc:  # noqa: BLE001
                         if args.cache_only:
                             return _finish_skipped(ledger, run_stats, f"本地份额缓存读取失败：{exc}")
                         ledger.progress("share_cross_section_unavailable", str(exc))
-                        shares = source.get_etf_share(codes, start_date, trade_date, refresh=args.refresh)
+                        shares = source.get_etf_share(codes, fetch_start, trade_date, refresh=args.refresh)
                 else:
-                    shares = source.get_etf_share(codes, start_date, trade_date, refresh=args.refresh)
+                    shares = source.get_etf_share(codes, fetch_start, trade_date, refresh=args.refresh)
+            except (IncompleteMarketCoverageError, ShareDataQualityError):
+                raise
             except Exception as exc:  # noqa: BLE001
                 ledger.progress("share_data_unavailable", str(exc))
                 shares = pd.DataFrame()
@@ -225,15 +236,17 @@ def main(argv: list[str] | None = None) -> int:
         flow = build_flow_snapshot(daily, shares, basic)
         flow = _apply_lifecycle_flow_adjustments(flow, config.lifecycle_flow_adjustments_path, run_stats)
         flow = apply_category_map(flow, category_map)
+        if not flow.empty:
+            flow = flow.loc[pd.to_datetime(flow["trade_date"]).ge(start_date)].copy()
         run_stats.update(
             {
                 "flow_estimate_unit": "yuan",
-                "share_field_unit": "tushare_fd_share_10k_shares",
+                "share_field_unit": "listed_shares_10k_v1",
                 "share_unit_multiplier": int(TUSHARE_FD_SHARE_UNIT_MULTIPLIER),
                 "amount_unit_multiplier": int(TUSHARE_DAILY_AMOUNT_UNIT_MULTIPLIER),
                 "amount_unit": "yuan",
                 "source_amount_unit": "tushare_fund_daily_amount_1000_yuan",
-                "flow_price_source": "fund_daily_close; money_fund_quote_gt_10_divided_by_100",
+                "flow_price_source": "fund_daily_close_per_listed_share; verified_share_units",
             }
         )
         run_stats.update(category_map_stats(flow))
@@ -262,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
             alerts=alerts,
             notes=[
                 "Flow estimate = Tushare fd_share change (10k-share units) × 10,000 × flow price.",
-                "For money-market ETFs quoted near 100, flow price uses close / 100; other ETFs use on-exchange close.",
+                "Shares use verified listed-share units; all ETFs, including money ETFs, use the unscaled on-exchange close.",
                 "Tushare fund_daily.amount is normalized from thousand-yuan units to yuan.",
                 "When share data is unavailable, the report still ranks activity by amount but net flow is zero.",
             ],
@@ -273,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
             summary=summary,
             flow=flow,
             notes=[
-                "金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。",
+                "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
                 "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
             ],
         )
@@ -316,6 +329,31 @@ def _report_history_start_date(calendar: object, trade_date: pd.Timestamp) -> pd
         return pd.Timestamp(calendar.shift_trade_date(resolved.date(), -1)).normalize()
     except Exception:  # noqa: BLE001
         return period_start
+
+
+def _source_warmup_start_date(
+    calendar_frame: pd.DataFrame,
+    history_start: pd.Timestamp,
+    *,
+    cache_dir: Path | None = None,
+    source_name: str = "tushare",
+) -> pd.Timestamp:
+    """Read up to 20 earlier official sessions to seed cross-border gaps.
+
+    Warm-up rows are calculation inputs only, not an expanded report window.
+    Cache-only runs use the contiguous available cache, never invented dates.
+    """
+    dates = pd.to_datetime(calendar_frame["cal_date"], errors="coerce").dt.normalize()
+    previous = dates.loc[calendar_frame["is_open"].eq(1) & dates.lt(history_start)].dropna().drop_duplicates().sort_values(ascending=False).head(20)
+    available = None
+    if cache_dir is not None:
+        available = set(_cached_cross_section_keys(cache_dir, source_name, "etf_daily")) & set(_cached_cross_section_keys(cache_dir, source_name, "etf_share"))
+    start = pd.Timestamp(history_start).normalize()
+    for day in previous:
+        if available is not None and format_tushare_date(day) not in available:
+            break
+        start = pd.Timestamp(day)
+    return start
 
 
 def _cache_coverage_error(cache_dir: Path, source_name: str, trade_dates: list[pd.Timestamp], trade_date: pd.Timestamp) -> str:

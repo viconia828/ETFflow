@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from etf_flow_monitor.data.schemas import ETF_FLOW_COLUMNS, normalize_etf_daily_frame, normalize_etf_share_frame
+from etf_flow_monitor.data.schemas import ACTUAL_SHARE_UNIT, ETF_FLOW_COLUMNS, normalize_etf_daily_frame, normalize_etf_share_frame
 
 TUSHARE_FD_SHARE_UNIT_MULTIPLIER = 10_000.0
 TUSHARE_DAILY_AMOUNT_UNIT_MULTIPLIER = 1_000.0
-MONEY_FUND_QUOTE_DIVISOR = 100.0
+class ShareUnitError(ValueError):
+    """Refuse a report when money ETF shares have unverified or mixed units."""
 
 
 def build_flow_snapshot(
@@ -39,18 +40,33 @@ def build_flow_snapshot(
         working["fund_type"] = ""
 
     if not share_frame.empty:
-        working = working.merge(share_frame[["fund_code", "trade_date", "shares", "source"]], on=["fund_code", "trade_date"], how="left")
+        working = working.merge(share_frame[["fund_code", "trade_date", "shares", "source", "share_unit"]], on=["fund_code", "trade_date"], how="left")
         working = working.sort_values(["fund_code", "trade_date"], kind="stable")
         working["share_change"] = working.groupby("fund_code")["shares"].diff()
     else:
         working["shares"] = pd.NA
         working["share_change"] = pd.NA
         working["source"] = "amount_only"
+        working["share_unit"] = "unknown"
 
     close = pd.to_numeric(working["close"], errors="coerce")
     working["flow_price"] = close
     money_mask = working["fund_type"].fillna("").astype(str).str.contains("货币", regex=False) & close.gt(10)
-    working.loc[money_mask, "flow_price"] = close.loc[money_mask] / MONEY_FUND_QUOTE_DIVISOR
+    # Prices are yuan per listed share, including 100-yuan money ETFs. Old
+    # equivalent-one-yuan shares must be refreshed, never guessed from a ratio.
+    unverified = money_mask & working["shares"].notna() & working["share_unit"].ne(ACTUAL_SHARE_UNIT).fillna(True)
+    if unverified.any():
+        sample = working.loc[unverified, ["fund_code", "trade_date", "share_unit"]].head(5).to_dict("records")
+        raise ShareUnitError(f"Unverified money ETF share units; refresh historical shares before reporting: {sample}")
+    previous = working.groupby("fund_code")["shares"].shift()
+    ratio = pd.to_numeric(working["shares"], errors="coerce") / pd.to_numeric(previous, errors="coerce")
+    scale_jump = money_mask & (ratio.between(0.008, 0.0125) | ratio.between(80, 125))
+    # A simultaneous cross-fund scale break is a source-quality event. Individual
+    # large redemptions remain flows; they are not automatically zeroed/scaled.
+    suspicious_dates = working.loc[scale_jump].groupby("trade_date")["fund_code"].nunique()
+    suspicious_dates = suspicious_dates[suspicious_dates.ge(3)]
+    if not suspicious_dates.empty:
+        raise ShareUnitError(f"Simultaneous near-100x money ETF share discontinuity: {suspicious_dates.to_dict()}")
 
     working["estimated_net_flow"] = (
         pd.to_numeric(working["share_change"], errors="coerce")
@@ -77,6 +93,7 @@ def build_flow_snapshot(
             "estimated_net_flow",
             "flow_direction",
             "source",
+            "share_unit",
         ]
     ].copy()
     return result.sort_values(["trade_date", "estimated_net_flow"], ascending=[True, False], kind="stable").reset_index(drop=True)

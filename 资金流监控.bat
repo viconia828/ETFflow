@@ -67,16 +67,12 @@ if defined TRADE_DATE (
     "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%"
 )
 set "CACHE_EXIT_CODE=%ERRORLEVEL%"
-if "%CACHE_EXIT_CODE%"=="2" (
+if not "%CACHE_EXIT_CODE%"=="0" (
     echo(
-    echo [ERROR] 当天单市场数据为空，ETF 数据没有完整拉取成功，无法生成当天报表。
+    echo [ERROR] ETF 数据更新或校验失败，本次停止生成及发布。
     echo(
     set "EXIT_CODE=%CACHE_EXIT_CODE%"
     goto finish
-)
-if not "%CACHE_EXIT_CODE%"=="0" (
-    echo(
-    echo [WARN] Cache helper failed. Will try local cache only.
 )
 
 echo(
@@ -144,16 +140,12 @@ echo(
 echo [1/3] Updating ETF data cache to range end...
 "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --trade-date "%RANGE_END%"
 set "CACHE_EXIT_CODE=%ERRORLEVEL%"
-if "%CACHE_EXIT_CODE%"=="2" (
+if not "%CACHE_EXIT_CODE%"=="0" (
     echo(
-    echo [ERROR] 区间结束日单市场数据为空，ETF 数据没有完整拉取成功，无法生成本次区间报表。
+    echo [ERROR] ETF 数据更新或校验失败，本次停止区间报表及发布。
     echo(
     set "EXIT_CODE=%CACHE_EXIT_CODE%"
     goto finish
-)
-if not "%CACHE_EXIT_CODE%"=="0" (
-    echo(
-    echo [WARN] Cache helper failed. Will try local cache only.
 )
 
 echo(

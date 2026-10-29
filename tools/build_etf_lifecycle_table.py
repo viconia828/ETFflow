@@ -623,6 +623,8 @@ def _trading_day_window(value: object, *, window_days: int, calendar: TradingCal
 
 
 def _jump_keys(frame: pd.DataFrame) -> pd.Series:
+    if frame.empty:
+        return pd.Series(index=frame.index, dtype="string")
     fund_code = frame.get("fund_code", pd.Series(index=frame.index, dtype=object)).fillna("").astype(str).str.upper()
     trade_date = parse_excel_friendly_date_series(frame.get("trade_date", pd.Series(index=frame.index, dtype=object))).map(format_tushare_date).fillna("")
     prev_trade_date = parse_excel_friendly_date_series(frame.get("prev_trade_date", pd.Series(index=frame.index, dtype=object))).map(format_tushare_date).fillna("")

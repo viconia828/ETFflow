@@ -79,7 +79,9 @@ BAT 会按三步执行：
 
 如果 `action=fetch`，表示本地官方交易日历不足，会自动向 Tushare 补拉到 `required_tail`。
 
-页面生成阶段使用本地缓存，不会再次访问远端数据源。
+页面生成阶段使用本地缓存，不会再次访问远端数据源。缓存更新阶段默认回查最近 5 个官方交易日的份额，覆盖上游延迟更新或修订；刷新失败会停止生成和发布，并写入 `outputs/logs/cache_update_*/run.json`。
+
+计算跨境基金历史区间时，会在报表窗口前读取最多 20 个官方交易日作为前值预热，避免区间起点遇到海外休市缺值时丢失首次份额变化。缓存模式只使用连续已有的前序日期，预热行不扩大报表展示范围。
 
 区间模式会先做一段 P2 提速评估并打印摘要：朴素逐日生成需要读取多少个历史横截面、批量复用后实际读取多少、预计节约多少。区间模式默认采用明细输出瘦身：`etf_flow_snapshot.csv` 只写报表日当天明细，dashboard 和文字报告仍使用完整 12 个月历史窗口计算。
 
@@ -196,6 +198,8 @@ python -X utf8 -u tools\publish_pages.py --config config.txt --trade-date 202606
 $env:PYTHONPATH = "$PWD\src"
 python -X utf8 -u tools\update_flow_cache.py --config config.txt --full-check
 ```
+
+`--full-check` 检查缺失日期；`--refresh` 会重新抓取并覆盖配置窗口内全部行情和份额日期。`--recent-share-days N` 可调整日常份额回查天数，默认 5。缓存使用临时文件完成写入后再原子替换，避免中断留下半份文件。份额原始响应保存在 `data/cache/tushare/raw/fund_share/`，触及单次 2,000 行上限时按沪深市场分别获取。
 
 ## ETF 分类维护
 
@@ -338,7 +342,9 @@ estimated_net_flow = share_change * 10000 * flow_price
 
 - `share_change` 来自 Tushare `fund_share.fd_share`，当前按“万份”处理。
 - 普通 ETF 和债券 ETF 使用场内收盘价作为 `flow_price`。
-- 100 元附近报价的货币 ETF 使用 `close / 100`，避免把每份约 1 元的货币基金放大。
+- 份额统一为实际场内万份（`share_unit=listed_shares_10k_v1`），货币 ETF 同样使用每份场内收盘价，不再统一除以 100。旧缓存必须刷新，不能靠份额跳变比例猜测单位。
+- 三只深市货币 ETF 的已核实历史修正保存在 `data/local_reference/etf_share_verified_overrides.csv`，逐行记录日期、实际份额及证据；`data/local_reference/etf_share_evidence/` 提供来源说明和校验清单，原始工具响应仅在本地保留并由 `.gitignore` 排除。既替换错误值，也补齐源响应缺失的已核实记录，避免历史单位、日期错位和缺行影响累计资金流。
+- 未核实的货币 ETF 份额单位、同日至少三只货币 ETF 接近百倍的份额断点会阻止出报表，原因写入运行账本；不会静默归零或自动缩放。
 - 页面中统一换算为亿元展示。
 - Tushare `fund_daily.vol` 抽样核对为“手”口径；当前页面仍以成交额和估算净额为主，不展示成交量、规模或份额视图。
 

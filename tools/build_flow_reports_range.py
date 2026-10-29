@@ -27,6 +27,7 @@ from etf_flow_monitor.cli import (  # noqa: E402
     _open_trade_dates,
     _report_history_start_date,
     _source_frame_stats,
+    _source_warmup_start_date,
 )
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import apply_category_map, category_map_codes, category_map_stats, load_category_map  # noqa: E402
@@ -141,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
             return _finish(ledger, run_stats, 1, "failed", "输入区间内没有交易日。")
 
         history_starts = {trade_date: _report_history_start_date(calendar, trade_date) for trade_date in report_dates}
-        source_start = min(history_starts.values())
+        source_start = _source_warmup_start_date(
+            calendar_frame, min(history_starts.values()),
+            cache_dir=config.cache_dir if args.cache_only else None,
+            source_name=source.source_name,
+        )
         source_end = max(report_dates)
         source_trade_dates = _open_trade_dates(calendar_frame, source_start, source_end)
         naive_source_date_reads = sum(
@@ -153,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
                 "requested_end": requested_end.strftime("%Y-%m-%d"),
                 "report_trade_dates": int(len(report_dates)),
                 "source_start": source_start.strftime("%Y-%m-%d"),
+                "report_history_start": min(history_starts.values()).strftime("%Y-%m-%d"),
                 "source_end": source_end.strftime("%Y-%m-%d"),
                 "source_trade_dates": int(len(source_trade_dates)),
                 "naive_cross_section_date_reads": int(naive_source_date_reads * 2),
@@ -219,12 +225,12 @@ def main(argv: list[str] | None = None) -> int:
         run_stats.update(
             {
                 "flow_estimate_unit": "yuan",
-                "share_field_unit": "tushare_fd_share_10k_shares",
+                "share_field_unit": "listed_shares_10k_v1",
                 "share_unit_multiplier": int(TUSHARE_FD_SHARE_UNIT_MULTIPLIER),
                 "amount_unit_multiplier": int(TUSHARE_DAILY_AMOUNT_UNIT_MULTIPLIER),
                 "amount_unit": "yuan",
                 "source_amount_unit": "tushare_fund_daily_amount_1000_yuan",
-                "flow_price_source": "fund_daily_close; money_fund_quote_gt_10_divided_by_100",
+                "flow_price_source": "fund_daily_close_per_listed_share; verified_share_units",
             }
         )
         run_stats.update(category_map_stats(flow_all))
@@ -425,7 +431,7 @@ def _write_one_report(
         alerts=alerts,
         notes=[
             "Flow estimate = Tushare fd_share change (10k-share units) × 10,000 × flow price.",
-            "For money-market ETFs quoted near 100, flow price uses close / 100; other ETFs use on-exchange close.",
+            "Shares use verified listed-share units; all ETFs, including money ETFs, use the unscaled on-exchange close.",
             "Tushare fund_daily.amount is normalized from thousand-yuan units to yuan.",
             "Range mode writes only report-day rows to etf_flow_snapshot.csv by default; dashboard uses full history.",
         ],
@@ -436,7 +442,7 @@ def _write_one_report(
         summary=summary_window,
         flow=flow_window,
         notes=[
-            "金额 = Tushare fd_share 逐日变化（万份）× 10,000 × 资金流价格；普通 ETF 使用场内收盘价，100 元附近报价的货币 ETF 使用收盘价 / 100。",
+            "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
             "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
         ],
     )
