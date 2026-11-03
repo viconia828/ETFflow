@@ -94,7 +94,7 @@ def _render_document(
     if not note_lines:
         note_lines = [
             "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
-            "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
+            "成交额按统一缓存口径从千元换算为元，页面以亿元显示。",
         ]
     if DIRECTION_NOTE not in note_lines:
         note_lines.append(DIRECTION_NOTE)

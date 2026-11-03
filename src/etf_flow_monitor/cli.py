@@ -274,9 +274,9 @@ def main(argv: list[str] | None = None) -> int:
             summary=summary.tail(10),
             alerts=alerts,
             notes=[
-                "Flow estimate = Tushare fd_share change (10k-share units) × 10,000 × flow price.",
+                "Flow estimate = listed-share change (10k-share units) × 10,000 × flow price.",
                 "Shares use verified listed-share units; all ETFs, including money ETFs, use the unscaled on-exchange close.",
-                "Tushare fund_daily.amount is normalized from thousand-yuan units to yuan.",
+                "Cached daily turnover is normalized from thousand-yuan units to yuan.",
                 "When share data is unavailable, the report still ranks activity by amount but net flow is zero.",
             ],
         )
@@ -287,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             flow=flow,
             notes=[
                 "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
-                "成交额 = Tushare fund_daily.amount × 1,000，统一换算为元后再在页面显示为亿元。",
+                "成交额按统一缓存口径从千元换算为元，页面以亿元显示。",
             ],
         )
         ledger.record_stats(run_stats)

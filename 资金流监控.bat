@@ -60,13 +60,14 @@ echo(
 set "TRADE_DATE="
 set /p "TRADE_DATE=Trade date YYYYMMDD, blank = default: "
 echo(
-echo [1/3] Updating ETF data cache...
+echo [1/3] Updating ETF data cache (Tushare / iFinD)...
 if defined TRADE_DATE (
-    "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --trade-date "%TRADE_DATE%"
+    "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --trade-date "%TRADE_DATE%" --ifind-fallback
 ) else (
-    "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%"
+    "%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --ifind-fallback
 )
 set "CACHE_EXIT_CODE=%ERRORLEVEL%"
+if "%CACHE_EXIT_CODE%"=="3" goto no_source_data
 if not "%CACHE_EXIT_CODE%"=="0" (
     echo(
     echo [ERROR] ETF 数据更新或校验失败，本次停止生成及发布。
@@ -137,9 +138,10 @@ if not defined RANGE_END (
 )
 
 echo(
-echo [1/3] Updating ETF data cache to range end...
-"%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --trade-date "%RANGE_END%"
+echo [1/3] Updating ETF data cache to range end (Tushare / iFinD)...
+"%PYTHON_EXE%" -X utf8 -u "%~dp0tools\update_flow_cache.py" --config "%CONFIG_PATH%" --trade-date "%RANGE_END%" --ifind-fallback
 set "CACHE_EXIT_CODE=%ERRORLEVEL%"
+if "%CACHE_EXIT_CODE%"=="3" goto no_source_data
 if not "%CACHE_EXIT_CODE%"=="0" (
     echo(
     echo [ERROR] ETF 数据更新或校验失败，本次停止区间报表及发布。
@@ -176,12 +178,17 @@ if "%PAGES_EXIT_CODE%"=="2" (
     echo [OK] Pages publish finished.
 )
 set "EXIT_CODE=0"
+goto finish
+
+:no_source_data
+echo(
+echo [ERROR] Tushare 和 iFinD 均无目标交易日所需的可用数据，本次停止生成及发布。
+set "EXIT_CODE=%CACHE_EXIT_CODE%"
 
 :finish
 echo(
 pause
-endlocal
-exit /b %EXIT_CODE%
+endlocal & exit /b %EXIT_CODE%
 
 :try_python
 set "CANDIDATE_PYTHON=%~1"

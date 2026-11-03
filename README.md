@@ -1,6 +1,6 @@
 # ETF 全市场资金流监控使用说明
 
-这是一个用于每日查看全市场 ETF 资金流向和活跃度的本地工具。它会从 Tushare 获取 ETF 行情和份额数据，缓存到本机，生成 Markdown 报告和可分享的静态网页。
+这是一个用于每日查看全市场 ETF 资金流向和活跃度的本地工具。交互 BAT 从 Tushare 或 iFinD 获取 ETF 行情和份额数据，缓存到本机，生成 Markdown 报告和可分享的静态网页。
 
 本工具只做监控和研究辅助，不会下单、调仓、修改持仓，也不会连接任何交易系统。
 
@@ -410,3 +410,16 @@ python -X utf8 tools\check_tushare_source_health.py --config config.txt --trade-
 ## 项目边界
 
 本项目只负责 ETF 资金流监控、报告和静态页面发布。不包含策略执行、组合构建、自动交易、调仓或任何会改变账户状态的功能。
+
+## iFinD / Tushare 份额对照
+
+交互式 `资金流监控.bat` 的单日与区间模式默认启用双源。每个交易日的行情和份额分别优先使用 Tushare，主源无法提供可用切片时保留已有有效缓存，或改用 iFinD。两项切片齐备即进入常规报告流程。首次运行仍需取得交易所日历和 ETF 基础名单，后续可从缓存读取。缺失和异常记录在缓存更新账本中。
+
+使用本机现有 Python 和 `IFIND_REFRESH_TOKEN`。监控池与交易日历取自本地 Tushare 基础数据及项目分类表。默认实时请求两源，指定 `--tushare-cache` 可改为对照现有 Tushare 份额切片。
+
+```powershell
+python tools/compare_etf_share_sources.py --trade-date 20261103
+python tools/compare_etf_share_sources.py --trade-date 20261102 --codes 510300.SH,159915.SZ
+```
+
+按证券代码和目标交易日对齐场内流通份额，统一换算为份，差值在 1 份以内计为一致。源响应分别归档到缓存的 `ifind/raw/smart_stock_picking/` 和 `tushare/raw/fund_share/`。逐券 CSV 位于 `outputs/flow_monitor/YYYYMMDD/share_compare_*.csv`，覆盖率、观测时间和旧日期返回情况见 `outputs/logs/share_compare_*/run.json`。缺数据时保留当次对照并返回退出码 2。该命令独立运行，用于实测可用时间和数据口径。

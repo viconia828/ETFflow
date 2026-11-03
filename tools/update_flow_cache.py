@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+from functools import cache as memoize
 from pathlib import Path
 import sys
 import threading
@@ -18,7 +19,13 @@ if str(SRC_DIR) not in sys.path:
 
 from etf_flow_monitor.config import load_config  # noqa: E402
 from etf_flow_monitor.data.category_map import category_map_codes, load_category_map  # noqa: E402
-from etf_flow_monitor.data.tushare_etf_source import IncompleteMarketCoverageError, TushareEtfSource  # noqa: E402
+from etf_flow_monitor.data.ifind_etf_source import IFindEtfSource  # noqa: E402
+from etf_flow_monitor.data.schemas import ACTUAL_SHARE_UNIT  # noqa: E402
+from etf_flow_monitor.data.tushare_etf_source import (  # noqa: E402
+    IncompleteMarketCoverageError,
+    TushareEtfSource,
+    _validate_daily_market_coverage,
+)
 from etf_flow_monitor.utils.calendar import (  # noqa: E402
     current_shanghai_date,
     normalize_date_input,
@@ -30,6 +37,11 @@ from etf_flow_monitor.run_ledger import RunLedger, make_log_dir  # noqa: E402
 
 
 INCOMPLETE_MARKET_COVERAGE_EXIT_CODE = 2
+DUAL_SOURCE_NO_DATA_EXIT_CODE = 3
+
+
+class DualSourceNoDataError(RuntimeError):
+    pass
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--refresh", action="store_true", help="Refresh all target dates even when cache files exist.")
     parser.add_argument("--full-check", action="store_true", help="Scan every required trading date instead of using the fast interval check.")
     parser.add_argument("--recent-share-days", type=int, default=5, help="Re-fetch the last N official trading dates, including existing share files (default 5).")
+    parser.add_argument("--ifind-fallback", action="store_true", help="Use iFinD when Tushare cannot provide a usable daily or share slice.")
     return parser
 
 
@@ -63,14 +76,24 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
     args = build_parser().parse_args(argv)
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
-    source = TushareEtfSource.from_runtime(cache_dir=config.cache_dir, search_dirs=[str(config_path.parent), str(PROJECT_ROOT)])
+    try:
+        source = TushareEtfSource.from_runtime(cache_dir=config.cache_dir, search_dirs=[str(config_path.parent), str(PROJECT_ROOT)])
+    except ValueError:
+        if not args.ifind_fallback:
+            raise
+        source = TushareEtfSource.from_cache(cache_dir=config.cache_dir)
+        ledger.progress("tushare_unavailable", "Tushare runtime configuration unavailable")
+
+    @memoize
+    def ifind_source() -> IFindEtfSource:
+        return IFindEtfSource(source.cache)
 
     requested_date = _parse_requested_date(args.trade_date) or pd.Timestamp(current_shanghai_date()).normalize()
     configured_source_start = _source_start_for_usable_date(config.local_cache_start_date)
     if args.lookback_days is not None:
         configured_source_start = min(configured_source_start, requested_date - pd.Timedelta(days=max(int(args.lookback_days), 20)))
     calendar_start = min(configured_source_start - pd.Timedelta(days=30), requested_date - pd.Timedelta(days=30))
-    calendar_end = requested_date + pd.Timedelta(days=10)
+    calendar_end = requested_date + pd.Timedelta(days=10 if source.client is not None else 0)
     cached_calendar = source.cache.load_calendar(source.source_name, config.calendar_exchange) if source.cache is not None else None
     calendar_status = _calendar_refresh_status(cached_calendar, calendar_start, calendar_end)
     print(
@@ -79,11 +102,19 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
         flush=True,
     )
     try:
-        calendar_frame = source.get_calendar(calendar_start, calendar_end, exchange=config.calendar_exchange, refresh=False)
+        calendar_frame = source.get_calendar(
+            calendar_start, calendar_end, exchange=config.calendar_exchange, refresh=False,
+            cache_only=source.client is None,
+        )
     except Exception as exc:  # noqa: BLE001
-        _print_update_failure(config.cache_dir, source.source_name, exc)
-        ledger.progress("calendar_failed", str(exc))
-        return 1
+        if not args.ifind_fallback or not _calendar_covers_date_range(cached_calendar, calendar_start, requested_date):
+            _print_update_failure(config.cache_dir, source.source_name, exc)
+            ledger.progress("calendar_failed", str(exc))
+            return 1
+        calendar_frame = cached_calendar
+        ledger.progress("calendar_cache_fallback", "Using cached official exchange calendar")
+    if not _calendar_covers_date_range(calendar_frame, calendar_start, requested_date):
+        raise RuntimeError("Official exchange calendar does not cover the requested dates")
     calendar = trading_calendar_from_frame(calendar_frame, exchange=config.calendar_exchange)
     if str(args.trade_date or "").strip():
         resolved_date, calendar_mode = resolve_monitor_market_date(
@@ -140,7 +171,9 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
     category_map = load_category_map(config.category_map_path)
     category_codes = category_map_codes(category_map)
     try:
-        basic = source.get_etf_basic(market=config.etf_market, refresh=False)
+        basic = source.get_etf_basic(market=config.etf_market, refresh=False, cache_only=source.client is None)
+        if basic.empty:
+            raise RuntimeError("ETF universe is unavailable")
     except Exception as exc:  # noqa: BLE001
         _print_update_failure(config.cache_dir, source.source_name, exc)
         ledger.progress("basic_failed", str(exc))
@@ -156,17 +189,27 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
             ledger.progress("fund_daily", format_tushare_date(trade_date), done=state.done, total=state.total)
             state.stage = "fund_daily"
             state.trade_date = trade_date
-            source.get_etf_daily_by_trade_dates(codes, [trade_date], refresh=True)
+            if args.ifind_fallback:
+                _refresh_dual_source(source, ifind_source, "etf_daily", codes, basic, trade_date, ledger)
+            else:
+                source.get_etf_daily_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
         for trade_date in missing_share:
             ledger.progress("fund_share", format_tushare_date(trade_date), done=state.done, total=state.total)
             state.stage = "fund_share"
             state.trade_date = trade_date
-            source.get_etf_share_by_trade_dates(codes, [trade_date], refresh=True)
+            if args.ifind_fallback:
+                _refresh_dual_source(source, ifind_source, "etf_share", codes, basic, trade_date, ledger)
+            else:
+                source.get_etf_share_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
+    except DualSourceNoDataError as exc:
+        ledger.progress("dual_source_no_data", str(exc))
+        print(f"[cache] {exc}", flush=True)
+        return DUAL_SOURCE_NO_DATA_EXIT_CODE
     except IncompleteMarketCoverageError as exc:
         ledger.progress("incomplete_source", str(exc))
-        print('[cache] daily cross-section incomplete: ' + str(exc), flush=True)
+        print('[cache] source coverage incomplete: ' + str(exc), flush=True)
         print('[cache] no incomplete cache file was written; BAT will skip report generation for this run.', flush=True)
         return INCOMPLETE_MARKET_COVERAGE_EXIT_CODE
     except Exception as exc:  # noqa: BLE001
@@ -178,6 +221,76 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
     print(f"[cache] 更新完成：target={target_key} total_updated={state.done}/{state.total}", flush=True)
     print(f"[cache] cache_stats={source.cache.snapshot_stats() if source.cache is not None else {}}", flush=True)
     return 0
+
+
+def _refresh_dual_source(source, get_ifind, dataset, codes, basic, trade_date, ledger) -> None:
+    key = format_tushare_date(trade_date)
+    active = basic["fund_code"].isin(codes)
+    active &= basic["list_date"].isna() | basic["list_date"].le(trade_date)
+    active &= basic["delist_date"].isna() | basic["delist_date"].gt(trade_date)
+    requested = set(basic.loc[active, "fund_code"])
+    if not requested:
+        raise RuntimeError(f"{key} has no listed ETFs in the monitoring universe")
+
+    def validate(frame: pd.DataFrame | None, provider: str) -> pd.DataFrame:
+        if frame is None or frame.empty:
+            raise IncompleteMarketCoverageError(f"{provider} has no {dataset} for {key}")
+        usable = pd.to_datetime(frame["trade_date"], errors="coerce").eq(trade_date)
+        if dataset == "etf_share":
+            values = pd.to_numeric(frame["shares"], errors="coerce")
+            usable &= frame["share_unit"].eq(ACTUAL_SHARE_UNIT) & values.gt(0) & values.lt(float("inf"))
+        else:
+            close = pd.to_numeric(frame["close"], errors="coerce")
+            amount = pd.to_numeric(frame["amount"], errors="coerce")
+            usable &= close.gt(0) & close.lt(float("inf")) & amount.ge(0) & amount.lt(float("inf"))
+        frame = frame.loc[usable]
+        if not frame["fund_code"].isin(requested).any():
+            raise IncompleteMarketCoverageError(f"{provider} has no matching {dataset} for {key}")
+        _validate_daily_market_coverage(
+            frame, requested, dataset_name=dataset, trade_date=key, source_name=provider,
+        )
+        return frame
+
+    primary_error = None
+    try:
+        if source.client is None:
+            raise RuntimeError("Tushare runtime unavailable")
+        fetch = source.fetch_daily_snapshot if dataset == "etf_daily" else source.fetch_share_snapshot
+        frame = validate(fetch(trade_date), "Tushare")
+    except (RuntimeError, ValueError, OSError) as exc:
+        primary_error = exc
+        ledger.progress("tushare_slice_unavailable", str(exc), dataset=dataset, trade_date=key, reason=str(exc))
+    else:
+        source.cache.save_daily_cross_section(source.source_name, dataset, key, frame)
+        ledger.progress("tushare_selected", f"{key} {dataset}", rows=len(frame))
+        return
+
+    cached = source.cache.load_daily_cross_section(source.source_name, dataset, key)
+    try:
+        validate(cached, "Local cache")
+    except IncompleteMarketCoverageError:
+        pass
+    else:
+        ledger.progress("retained_slice", f"{key} {dataset}", rows=len(cached))
+        print(f"[cache] {key} {dataset} 使用已有有效缓存。", flush=True)
+        return
+
+    try:
+        frame = get_ifind().fetch_snapshot(
+            dataset, sorted(requested), key,
+            progress=lambda done: ledger.progress(
+                "ifind_fetch", f"{key} {dataset}", done=done, total=len(requested),
+            ),
+        )
+        frame = validate(frame, "iFinD")
+    except IncompleteMarketCoverageError as exc:
+        if isinstance(primary_error, IncompleteMarketCoverageError):
+            raise DualSourceNoDataError(f"{key} {dataset} 双源均无可用数据。{primary_error} | {exc}") from exc
+        raise RuntimeError(f"{key} {dataset} Tushare 取数失败，iFinD 无可用数据：{primary_error} | {exc}") from exc
+    source.cache.save_daily_cross_section(source.source_name, dataset, key, frame)
+    matched = frame["fund_code"].isin(requested).sum()
+    ledger.progress("ifind_selected", f"{key} {dataset}", matched=int(matched), requested=len(requested))
+    print(f"[cache] {key} {dataset} 使用 iFinD：{matched}/{len(requested)}。", flush=True)
 
 
 def _parse_requested_date(value: str | None) -> pd.Timestamp | None:

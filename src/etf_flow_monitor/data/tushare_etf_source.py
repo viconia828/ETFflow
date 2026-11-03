@@ -62,6 +62,23 @@ class TushareEtfSource:
             result.extend(part)
         return result
 
+    def fetch_share_snapshot(self, trade_date: object) -> pd.DataFrame:
+        """Fetch and audit a date slice, including partial coverage."""
+        key = format_tushare_date(trade_date)
+        params = {"trade_date": key}
+        return self._share_frame(self._query_share_rows(params), key=key, params=params)
+
+    def fetch_daily_snapshot(self, trade_date: object) -> pd.DataFrame:
+        key = format_tushare_date(trade_date)
+        params = {"trade_date": key}
+        rows = self.client.query(
+            "fund_daily", params=params,
+            fields="ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
+        )
+        if self.cache is not None:
+            self.cache.save_source_response(self.source_name, "fund_daily", key, params, rows)
+        return normalize_etf_daily_frame(pd.DataFrame(rows))
+
     @classmethod
     def from_runtime(cls, *, cache_dir: str | Path = "data/cache", search_dirs: list[str] | None = None) -> "TushareEtfSource":
         runtime = load_tushare_runtime_config(search_dirs=search_dirs or [str(Path.cwd())])
@@ -164,12 +181,7 @@ class TushareEtfSource:
                 if cache_only:
                     frames.append(normalize_etf_daily_frame(None))
                     continue
-                rows = self.client.query(
-                    "fund_daily",
-                    params={"trade_date": trade_date},
-                    fields="ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
-                )
-                frame = normalize_etf_daily_frame(pd.DataFrame(rows))
+                frame = self.fetch_daily_snapshot(trade_date)
                 _validate_daily_market_coverage(frame, code_set, dataset_name='fund_daily', trade_date=trade_date)
                 if self.cache is not None:
                     self.cache.save_daily_cross_section(self.source_name, "etf_daily", trade_date, frame)
@@ -236,8 +248,7 @@ class TushareEtfSource:
                 if cache_only:
                     frames.append(normalize_etf_share_frame(None))
                     continue
-                rows = self._query_share_rows({"trade_date": trade_date})
-                frame = self._share_frame(rows, key=trade_date, params={"trade_date": trade_date})
+                frame = self.fetch_share_snapshot(trade_date)
                 _validate_daily_market_coverage(frame, code_set, dataset_name='fund_share', trade_date=trade_date)
                 if self.cache is not None:
                     self.cache.save_daily_cross_section(self.source_name, "etf_share", trade_date, frame)
@@ -275,23 +286,26 @@ def _validate_daily_market_coverage(
     *,
     dataset_name: str,
     trade_date: str,
+    source_name: str = "Tushare",
 ) -> None:
     normalized_requested = set(_unique_codes(list(requested_codes)))
     expected_markets = _exchange_suffixes(normalized_requested)
     if len(expected_markets) < 2:
         return
-    if 'fund_code' in frame.columns:
-        returned_codes = set(_unique_codes(frame['fund_code'].tolist())) & normalized_requested
-        returned_markets = _exchange_suffixes(returned_codes)
-    else:
-        returned_markets = set()
+    received_codes = set(_unique_codes(frame['fund_code'].tolist())) if 'fund_code' in frame.columns else set()
+    returned_codes = received_codes & normalized_requested
+    returned_markets = _exchange_suffixes(returned_codes)
     missing_markets = sorted(expected_markets - returned_markets)
     if not missing_markets:
         return
     message = (
-        'Tushare ' + str(dataset_name) + ' daily cross-section ' + str(trade_date)
+        source_name + ' ' + str(dataset_name) + ' daily cross-section ' + str(trade_date)
         + ' returned no ' + '/'.join(missing_markets)
-        + ' rows; refusing to cache an incomplete market slice.'
+        + ' rows matching the requested ETF universe; '
+        + f'received_rows={len(frame)}, '
+        + 'received_markets=' + ('/'.join(sorted(_exchange_suffixes(received_codes))) or 'none')
+        + f', matched_requested_codes={len(returned_codes)}/{len(normalized_requested)}; '
+        + 'refusing to cache an incomplete market slice.'
     )
     raise IncompleteMarketCoverageError(message)
 
