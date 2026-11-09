@@ -22,7 +22,7 @@ from etf_flow_monitor.monitor.flow_metrics import (
     select_alert_rows,
 )
 from etf_flow_monitor.monitor.html_dashboard import write_dashboard_html
-from etf_flow_monitor.monitor.report import write_markdown_report
+from etf_flow_monitor.monitor.report import exchange_share_notes, write_markdown_report
 from etf_flow_monitor.run_ledger import RunLedger, make_log_dir
 from etf_flow_monitor.utils.calendar import (
     current_shanghai_date,
@@ -204,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
                             refresh=args.refresh,
                             cache_only=args.cache_only,
                             columns=SHARE_REPORT_COLUMNS,
+                            calendar_exchange=config.calendar_exchange,
                         )
                     except (IncompleteMarketCoverageError, ShareDataQualityError):
                         raise
@@ -268,12 +269,14 @@ def main(argv: list[str] | None = None) -> int:
         dashboard_path = output_dir / "etf_flow_dashboard.html"
         flow.to_csv(flow_path, index=False, encoding="utf-8-sig")
         summary.to_csv(summary_path, index=False, encoding="utf-8-sig")
+        source_notes = exchange_share_notes(flow_today)
         write_markdown_report(
             report_path,
             title=f"ETF Flow Monitor {trade_date.date()}",
             summary=summary.tail(10),
             alerts=alerts,
             notes=[
+                *source_notes,
                 "Flow estimate = listed-share change (10k-share units) × 10,000 × flow price.",
                 "Shares use verified listed-share units; all ETFs, including money ETFs, use the unscaled on-exchange close.",
                 "Cached daily turnover is normalized from thousand-yuan units to yuan.",
@@ -286,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
             summary=summary,
             flow=flow,
             notes=[
+                *source_notes,
                 "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
                 "成交额按统一缓存口径从千元换算为元，页面以亿元显示。",
             ],

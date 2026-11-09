@@ -10,6 +10,7 @@ from etf_flow_monitor.data.cache_store import CacheStore
 from etf_flow_monitor.data.share_units import load_share_overrides, normalize_fetched_shares
 from etf_flow_monitor.data.schemas import (
     ACTUAL_SHARE_UNIT,
+    ETF_SHARE_COLUMNS,
     normalize_calendar_frame,
     normalize_etf_basic_frame,
     normalize_etf_daily_frame,
@@ -21,6 +22,47 @@ from etf_flow_monitor.utils.io import format_tushare_date, merge_frames
 
 class IncompleteMarketCoverageError(RuntimeError):
     pass
+
+
+def validate_ifind_share_freshness(
+    frame: pd.DataFrame, requested_codes: set[str], trade_date: str, *,
+    cache: CacheStore, source_name: str, calendar_exchange: str,
+) -> None:
+    """Detect a market-wide carry-forward even when iFinD labels it with today's date."""
+    if "source" not in frame or not frame["source"].eq("ifind:listed_shares").any():
+        return
+    # Individual ETFs commonly have unchanged shares. Only test broad snapshots.
+    min_comparable_funds = 100
+    current = frame.loc[frame["source"].eq("ifind:listed_shares")]
+    if len(requested_codes) >= min_comparable_funds:
+        current = current.loc[current["fund_code"].isin(requested_codes)]
+    elif current["fund_code"].nunique() < min_comparable_funds:
+        return
+    key = format_tushare_date(trade_date)
+    calendar = cache.load_calendar(source_name, calendar_exchange)
+    if calendar is None or calendar.empty:
+        raise IncompleteMarketCoverageError(f"{key} 缺少官方交易日历，无法核验 iFinD 份额。")
+    day = pd.Timestamp(key)
+    target = pd.to_datetime(calendar["cal_date"]).eq(day) & calendar["is_open"].eq(1)
+    prior_dates = pd.to_datetime(calendar.loc[target, "pretrade_date"]).dropna().unique()
+    if len(prior_dates) != 1 or prior_dates[0] >= day:
+        raise IncompleteMarketCoverageError(f"{key} 缺少相邻官方交易日，无法核验 iFinD 份额。")
+    prior_day = pd.Timestamp(prior_dates[0])
+    prior_key = format_tushare_date(prior_day)
+    previous = cache.load_daily_cross_section(source_name, "etf_share", prior_key)
+
+    def listed_shares(rows: pd.DataFrame | None, date: pd.Timestamp) -> pd.Series:
+        rows = normalize_etf_share_frame(rows)
+        valid = (rows["trade_date"].eq(date) & rows["share_unit"].eq(ACTUAL_SHARE_UNIT)
+                 & rows["shares"].gt(0) & rows["shares"].lt(float("inf")))
+        # Compare in individual shares, ignoring differences due to CSV floating point parsing.
+        return (rows.loc[valid].set_index("fund_code")["shares"] * 10_000).round()
+
+    today, prior = listed_shares(current, day).align(listed_shares(previous, prior_day), join="inner")
+    if len(today) < min_comparable_funds:
+        raise IncompleteMarketCoverageError(f"{key} iFinD 份额与 {prior_key} 仅有 {len(today)} 只可比，无法核验全市场份额。")
+    if today.eq(prior).all():
+        raise IncompleteMarketCoverageError(f"{key} iFinD 份额与上一交易日 {prior_key} 的 {len(today)} 只可比 ETF 全部相同，当日份额待确认。")
 
 
 class TushareEtfSource:
@@ -231,15 +273,30 @@ class TushareEtfSource:
         refresh: bool = False,
         cache_only: bool = False,
         columns: list[str] | None = None,
+        calendar_exchange: str = "SSE",
     ) -> pd.DataFrame:
         frames: list[pd.DataFrame] = []
         code_set = set(_unique_codes(codes))
+        # Validate the original slice even when a caller only wants shares or dates.
+        read_columns = None if columns is None else list(dict.fromkeys([*columns, *ETF_SHARE_COLUMNS]))
         for trade_date in _unique_trade_dates(trade_dates):
             cached = (
                 None
                 if refresh or self.cache is None
-                else self.cache.load_daily_cross_section(self.source_name, "etf_share", trade_date, columns=columns)
+                else self.cache.load_daily_cross_section(self.source_name, "etf_share", trade_date, columns=read_columns)
             )
+            if cached is not None:
+                try:
+                    validate_ifind_share_freshness(
+                        cached, code_set, trade_date, cache=self.cache,
+                        source_name=self.source_name, calendar_exchange=calendar_exchange,
+                    )
+                except IncompleteMarketCoverageError:
+                    if cache_only:
+                        raise
+                    cached = None
+            if cached is not None and columns is not None and read_columns != columns:
+                cached = cached.filter(items=columns)
             if cached is not None and not cache_only:
                 normalized = normalize_etf_share_frame(cached)
                 if not normalized["share_unit"].eq(ACTUAL_SHARE_UNIT).all():

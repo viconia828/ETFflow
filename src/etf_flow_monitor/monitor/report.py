@@ -8,6 +8,16 @@ from typing import Iterable
 import pandas as pd
 
 
+def exchange_share_notes(flow_today: pd.DataFrame) -> list[str]:
+    sources = set(flow_today.get("source", pd.Series(dtype=str)).dropna())
+    notes = []
+    if sources.intersection({"sse:etf_scale", "sse:money_scale"}):
+        notes.append("沪市当日份额取自上交所公布的清算后基金份额。")
+    if "szse:etf_scale" in sources:
+        notes.append("深市当日份额取自深交所基金规模表。晚间披露值供参考，最终以次日早间更新为准。")
+    return notes
+
+
 def write_markdown_report(
     path: Path,
     *,

@@ -415,6 +415,8 @@ python -X utf8 tools\check_tushare_source_health.py --config config.txt --trade-
 
 交互式 `资金流监控.bat` 的单日与区间模式默认启用双源。每个交易日的行情和份额分别优先使用 Tushare，主源无法提供可用切片时保留已有有效缓存，或改用 iFinD。两项切片齐备即进入常规报告流程。首次运行仍需取得交易所日历和 ETF 基础名单，后续可从缓存读取。缺失和异常记录在缓存更新账本中。
 
+全市场 iFinD 份额在写入、复用及读取报表时，均按官方日历与上一交易日逐只比对。可比基金不足 100 只，或全部可比份额逐只相同，当日份额标为待确认。更新器会重新查询被拒的旧缓存；双源仍无合格份额时，BAT 停止生成和发布。
+
 使用本机现有 Python 和 `IFIND_REFRESH_TOKEN`。监控池与交易日历取自本地 Tushare 基础数据及项目分类表。默认实时请求两源，指定 `--tushare-cache` 可改为对照现有 Tushare 份额切片。
 
 ```powershell

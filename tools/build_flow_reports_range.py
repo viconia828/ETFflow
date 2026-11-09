@@ -41,7 +41,7 @@ from etf_flow_monitor.monitor.flow_metrics import (  # noqa: E402
     select_alert_rows,
 )
 from etf_flow_monitor.monitor.html_dashboard import write_dashboard_html  # noqa: E402
-from etf_flow_monitor.monitor.report import write_markdown_report  # noqa: E402
+from etf_flow_monitor.monitor.report import exchange_share_notes, write_markdown_report  # noqa: E402
 from etf_flow_monitor.run_ledger import RunLedger, make_log_dir  # noqa: E402
 from etf_flow_monitor.utils.calendar import normalize_date_input, trading_calendar_from_frame  # noqa: E402
 from etf_flow_monitor.utils.io import format_tushare_date  # noqa: E402
@@ -195,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         daily, shares = _load_source_frames_with_progress(
             source=source,
             codes=codes,
+            calendar_exchange=config.calendar_exchange,
             source_trade_dates=source_trade_dates,
             refresh=args.refresh,
             cache_only=args.cache_only,
@@ -284,6 +285,7 @@ def _load_source_frames_with_progress(
     *,
     source: TushareEtfSource,
     codes: list[str],
+    calendar_exchange: str,
     source_trade_dates: list[pd.Timestamp],
     refresh: bool,
     cache_only: bool,
@@ -328,6 +330,7 @@ def _load_source_frames_with_progress(
                     refresh=refresh,
                     cache_only=cache_only,
                     columns=SHARE_REPORT_COLUMNS,
+                    calendar_exchange=calendar_exchange,
                 )
             )
             state.done += 1
@@ -424,12 +427,14 @@ def _write_one_report(
     flow_to_write = flow_window if detail_output == "full" else flow_today
     flow_to_write.to_csv(flow_path, index=False, encoding="utf-8-sig")
     summary_window.to_csv(summary_path, index=False, encoding="utf-8-sig")
+    source_notes = exchange_share_notes(flow_today)
     write_markdown_report(
         report_path,
         title=f"ETF Flow Monitor {trade_date.date()}",
         summary=summary_window.tail(10),
         alerts=alerts,
         notes=[
+            *source_notes,
             "Flow estimate = listed-share change (10k-share units) × 10,000 × flow price.",
             "Shares use verified listed-share units; all ETFs, including money ETFs, use the unscaled on-exchange close.",
             "Cached daily turnover is normalized from thousand-yuan units to yuan.",
@@ -442,6 +447,7 @@ def _write_one_report(
         summary=summary_window,
         flow=flow_window,
         notes=[
+            *source_notes,
             "估算净额 = 已核实的场内份额变化（万份）× 10,000 × 场内收盘价；货币 ETF 同样按实际每份价格计价。",
             "成交额按统一缓存口径从千元换算为元，页面以亿元显示。",
         ],

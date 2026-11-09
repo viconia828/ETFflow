@@ -6,6 +6,7 @@ import pytest
 from etf_flow_monitor.data.cache_store import CacheStore
 from etf_flow_monitor.data.ifind_etf_source import IFindDateUnavailableError, _listed_shares, _quote_rows
 from etf_flow_monitor.data.schemas import ACTUAL_SHARE_UNIT
+from etf_flow_monitor.data.tushare_etf_source import IncompleteMarketCoverageError, TushareEtfSource
 from tools.update_flow_cache import DualSourceNoDataError, _refresh_dual_source
 
 
@@ -79,3 +80,44 @@ def test_dual_source_share_refresh(available, tmp_path):
         "tushare:fund_share" if available == "tushare" else "ifind:listed_shares"
     ] * 2
     assert get_ifind.called == (available == "ifind")
+
+
+def test_date_labelled_market_copy_rejected_until_revised(tmp_path):
+    day = pd.Timestamp("2026-11-09")
+    prior = pd.Timestamp("2026-11-06")
+    key = "20261109"
+    codes = [f"{510000 + i}.SH" for i in range(60)] + [f"{159000 + i}.SZ" for i in range(60)]
+    basic = pd.DataFrame({"fund_code": codes, "list_date": pd.NaT, "delist_date": pd.NaT})
+    previous = pd.DataFrame({
+        "fund_code": codes, "trade_date": prior, "shares": range(100, 220),
+        "source": "tushare:fund_share", "share_unit": ACTUAL_SHARE_UNIT,
+    })
+    # Different order, a missing code and a weekend between the official sessions.
+    stale = previous.iloc[:0:-1].assign(trade_date=day, source="ifind:listed_shares")
+    cache = CacheStore(tmp_path)
+    cache.save_calendar("tushare", "SSE", pd.DataFrame({
+        "cal_date": [day], "is_open": [1], "pretrade_date": [prior],
+    }))
+    cache.save_daily_cross_section("tushare", "etf_share", "20261106", previous)
+    primary = Mock(source_name="tushare", cache=cache)
+    primary.fetch_share_snapshot.return_value = previous.iloc[:0]
+    fallback = Mock()
+    fallback.fetch_snapshot.return_value = stale
+    args = (primary, lambda: fallback, "etf_share", codes, basic, day, Mock())
+    with pytest.raises(DualSourceNoDataError, match="119 只可比 ETF 全部相同"):
+        _refresh_dual_source(*args)
+    assert cache.load_daily_cross_section("tushare", "etf_share", key) is None
+
+    cache.save_daily_cross_section("tushare", "etf_share", key, stale)
+    reader = TushareEtfSource(None, cache)
+    with pytest.raises(IncompleteMarketCoverageError, match="20261106"):
+        reader.get_etf_share_by_trade_dates(
+            codes[:1], [day], cache_only=True, columns=["fund_code", "trade_date", "shares"],
+        )
+
+    fresh = stale.astype({"shares": float})
+    fresh.loc[fresh.index[0], "shares"] += 0.0001  # one underlying share
+    fallback.fetch_snapshot.return_value = fresh
+    _refresh_dual_source(*args)
+    recovered = reader.get_etf_share_by_trade_dates(codes, [day], cache_only=True).set_index("fund_code")
+    assert recovered.at[fresh.iloc[0]["fund_code"], "shares"] == fresh.iloc[0]["shares"]

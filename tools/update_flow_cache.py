@@ -25,6 +25,7 @@ from etf_flow_monitor.data.tushare_etf_source import (  # noqa: E402
     IncompleteMarketCoverageError,
     TushareEtfSource,
     _validate_daily_market_coverage,
+    validate_ifind_share_freshness,
 )
 from etf_flow_monitor.utils.calendar import (  # noqa: E402
     current_shanghai_date,
@@ -199,7 +200,8 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
             state.stage = "fund_share"
             state.trade_date = trade_date
             if args.ifind_fallback:
-                _refresh_dual_source(source, ifind_source, "etf_share", codes, basic, trade_date, ledger)
+                _refresh_dual_source(source, ifind_source, "etf_share", codes, basic, trade_date, ledger,
+                                     calendar_exchange=config.calendar_exchange)
             else:
                 source.get_etf_share_by_trade_dates(codes, [trade_date], refresh=True)
             state.done += 1
@@ -223,7 +225,7 @@ def _update(argv: list[str], ledger: RunLedger) -> int:
     return 0
 
 
-def _refresh_dual_source(source, get_ifind, dataset, codes, basic, trade_date, ledger) -> None:
+def _refresh_dual_source(source, get_ifind, dataset, codes, basic, trade_date, ledger, *, calendar_exchange="SSE") -> None:
     key = format_tushare_date(trade_date)
     active = basic["fund_code"].isin(codes)
     active &= basic["list_date"].isna() | basic["list_date"].le(trade_date)
@@ -249,6 +251,11 @@ def _refresh_dual_source(source, get_ifind, dataset, codes, basic, trade_date, l
         _validate_daily_market_coverage(
             frame, requested, dataset_name=dataset, trade_date=key, source_name=provider,
         )
+        if dataset == "etf_share":
+            validate_ifind_share_freshness(
+                frame, requested, key, cache=source.cache,
+                source_name=source.source_name, calendar_exchange=calendar_exchange,
+            )
         return frame
 
     primary_error = None
@@ -267,12 +274,19 @@ def _refresh_dual_source(source, get_ifind, dataset, codes, basic, trade_date, l
 
     cached = source.cache.load_daily_cross_section(source.source_name, dataset, key)
     try:
-        validate(cached, "Local cache")
-    except IncompleteMarketCoverageError:
-        pass
+        retained = validate(cached, "Local cache")
+    except IncompleteMarketCoverageError as exc:
+        if cached is not None:
+            ledger.progress("cached_slice_rejected", str(exc), dataset=dataset, trade_date=key, reason=str(exc))
+            print(f"[cache] {key} {dataset} 缓存校验失败：{exc}", flush=True)
     else:
-        ledger.progress("retained_slice", f"{key} {dataset}", rows=len(cached))
-        print(f"[cache] {key} {dataset} 使用已有有效缓存。", flush=True)
+        monitored = retained.loc[retained["fund_code"].isin(requested)]
+        sources = sorted(monitored["source"].dropna().unique()) if "source" in monitored else []
+        matched = monitored["fund_code"].nunique()
+        ledger.progress("retained_slice", f"{key} {dataset}", trade_date=key, dataset=dataset,
+                        rows=len(retained), matched=matched, requested=len(requested), sources=sources)
+        origin = f"，来源 {', '.join(sources)}" if sources else ""
+        print(f"[cache] {key} {dataset} 使用已有有效缓存，覆盖 {matched}/{len(requested)} 只{origin}。", flush=True)
         return
 
     try:
