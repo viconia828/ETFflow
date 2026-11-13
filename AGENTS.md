@@ -45,6 +45,16 @@ Every scheduled or manual monitor run should write:
 Do not let a monitor job run unattended for more than 30 minutes without
 checking `run.json`, stderr, latest output writes, and process resource use.
 
+## Temporary Directories
+
+Each script or test command that creates a temporary directory in the project
+must remove it on both success and failure. This includes directories passed
+to `pytest --basetemp`. Use a fresh directory per run and arrange cleanup with
+Python's `TemporaryDirectory` or a PowerShell `try`/`finally` block.
+
+Before recursive cleanup, verify that the resolved path is inside the project
+and is the exact directory created by this run. Never bulk-delete `tmp*` paths.
+
 ## Work Logs
 
 Keep project notes under:
