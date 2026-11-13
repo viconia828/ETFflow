@@ -376,8 +376,8 @@ def _render_trend_svg(rows: list[dict[str, object]]) -> str:
           <svg class="trend-svg" viewBox="0 0 {width} {height}" role="img" aria-label="ETF 净流入趋势图">
             <defs>
               <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="#21c8d8" stop-opacity="0.34"></stop>
-                <stop offset="100%" stop-color="#21c8d8" stop-opacity="0.02"></stop>
+                <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.18"></stop>
+                <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02"></stop>
               </linearGradient>
             </defs>
             <rect class="chart-bg" x="{left}" y="{top}" width="{plot_width}" height="{plot_height}" rx="4"></rect>
@@ -933,20 +933,20 @@ def _label_indexes(length: int, count: int) -> list[int]:
 def _stylesheet() -> str:
     return r"""
 :root {
-  color-scheme: dark;
-  --bg: #070b10;
-  --panel: #111418;
-  --panel-soft: #151922;
-  --line: #29313b;
-  --line-soft: #1f2630;
-  --text: #f3f6fb;
-  --muted: #9aa4b2;
-  --cyan: #26c6da;
-  --cyan-soft: rgba(38, 198, 218, 0.18);
-  --positive: #f05266;
-  --negative: #31c48d;
-  --neutral: #b7c0cc;
-  --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  color-scheme: light;
+  --bg: #eeede6;
+  --panel: #faf9f3;
+  --panel-soft: #f3f3eb;
+  --line: #cdd1c7;
+  --line-soft: #dfe1d7;
+  --text: #303b38;
+  --muted: #56635f;
+  --accent: #35696d;
+  --accent-soft: #dfebe7;
+  --positive: #9a625a;
+  --negative: #2d8043;
+  --neutral: var(--muted);
+  --shadow: 0 2px 8px rgba(56, 63, 50, 0.06);
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
@@ -963,7 +963,7 @@ button, table { font: inherit; }
   margin: 16px auto;
   padding: 18px;
   border: 1px solid var(--line-soft);
-  background: #090d13;
+  background: var(--panel-soft);
 }
 .hero {
   min-height: 142px;
@@ -998,10 +998,10 @@ button, table { font: inherit; }
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   color: var(--text);
-  background: #191d27;
+  background: var(--panel-soft);
   cursor: pointer;
 }
-.icon-button:hover { border-color: var(--cyan); color: var(--cyan); }
+.icon-button:hover { border-color: var(--accent); color: var(--accent); }
 .camera-icon, .close-icon {
   position: relative;
   display: block;
@@ -1071,7 +1071,7 @@ button, table { font: inherit; }
 .metric-card small {
   display: block;
   margin-top: 12px;
-  color: #6f7b8a;
+  color: var(--muted);
   font-size: 13px;
 }
 .view-tabs, .control-row {
@@ -1087,16 +1087,15 @@ button, table { font: inherit; }
   padding: 0 22px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #171b24;
+  background: var(--panel);
   color: var(--muted);
   font-weight: 900;
   cursor: pointer;
 }
 .view-button.is-active, .period-button.is-active {
-  background: var(--cyan);
-  color: #ffffff;
-  border-color: #38d2e0;
-  box-shadow: 0 0 0 1px rgba(38, 198, 218, 0.24), 0 8px 28px rgba(38, 198, 218, 0.16);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .period-buttons {
   display: flex;
@@ -1150,19 +1149,18 @@ button, table { font: inherit; }
   width: 100%;
   min-height: 360px;
 }
-.chart-bg { fill: #101419; }
-.grid-line { stroke: #1b2430; stroke-width: 1; }
-.zero-line { stroke: #42505f; stroke-width: 1.5; }
+.chart-bg { fill: var(--panel-soft); }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.zero-line { stroke: #87958d; stroke-width: 1.5; }
 .trend-area { fill: url(#trendAreaGradient); }
 .trend-line {
   fill: none;
-  stroke: #27c7d8;
+  stroke: var(--accent);
   stroke-width: 7;
   stroke-linejoin: round;
   stroke-linecap: round;
-  filter: drop-shadow(0 0 7px rgba(39, 199, 216, 0.5));
 }
-.trend-point { fill: #27c7d8; stroke: #d9fbff; stroke-width: 2; }
+.trend-point { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
 .axis-label, .empty-label {
   fill: var(--muted);
   font-size: 18px;
@@ -1289,8 +1287,8 @@ button, table { font: inherit; }
   border-radius: 8px;
   opacity: 0.82;
 }
-.negative .rotation-bar { background: linear-gradient(90deg, #187a5e, var(--negative)); }
-.positive .rotation-bar { background: linear-gradient(90deg, var(--positive), #a92538); }
+.negative .rotation-bar { background: var(--negative); }
+.positive .rotation-bar { background: var(--positive); }
 .empty-side, .empty-state {
   color: var(--muted);
   font-size: 18px;
@@ -1324,8 +1322,8 @@ button, table { font: inherit; }
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
-  color: var(--cyan);
-  background: var(--cyan-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
   font-size: 20px;
   font-weight: 900;
 }
